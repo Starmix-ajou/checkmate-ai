@@ -1,0 +1,8 @@
+# 가상 환경 dismiss
+rag/
+env/
+venv/
+*/__pycache__/
+*.pyc
+.env
+
