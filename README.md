@@ -1,6 +1,10 @@
 # checkmate-AI
 - 2025-1학기 캡스톤 디자인 과목에서 개발하는 CheckMate 서비스가 지원하는 AI 기능들과 관련된 데이터, 코드를 정리함.
 
+## AI architecture
+- ver 1.0
+[AI Architecture Design](./AI%20아키텍쳐.png)
+
 ## AI Modules
 1. feature_definition/ (기능 정의서 생성):
     - 사용자 입력 기능에 대한 feature_definition 생성
