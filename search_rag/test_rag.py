@@ -1,6 +1,5 @@
 import pytest
 from fastapi.testclient import TestClient
-
 from rag_query import app, docs, search
 
 # TestClient 생성
