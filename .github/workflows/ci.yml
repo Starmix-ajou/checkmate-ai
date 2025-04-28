@@ -1,0 +1,30 @@
+name: Build and Push to OCI
+on:
+  push:
+    branches:
+      - main
+
+env:
+  IMAGE_NAME: ${{ secrets.OCI_IMAGE_NAME }}
+
+jobs:
+  build-and-push:
+    runs-on: [self-hosted, checkmate]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Log in to OCI Container Registry
+        run: |
+          echo "${{ secrets.OCI_REGISTRY_PASSWORD }}" | docker login yny.ocir.io -u "${{ secrets.OCI_REGISTRY_USERNAME }}" --password-stdin
+
+      - name: Build and Push Docker Image
+        run: |
+          docker build \
+            --platform linux/arm64 \
+            -t $IMAGE_NAME:latest \
+            -t $IMAGE_NAME:${{ github.sha }} \
+            . 
+
+          docker push $IMAGE_NAME:latest
+          docker push $IMAGE_NAME:${{ github.sha }}

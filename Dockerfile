@@ -1,16 +1,15 @@
-# 베이스 이미지
-FROM  python:3.11-slim
+FROM python:3.11-slim
 
-# 작업 디렉토리 설정
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
-
-# 소스 복사
-COPY ./mvp /app/mvp
 COPY requirements.txt /app/
 
-# 패키지 설치
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+RUN pip install --upgrade pip \
+    && pip install -r requirements.txt
 
-# Fast API 서버 실행
+COPY ./mvp /app/mvp
 CMD ["uvicorn", "mvp.serve:app", "--host", "0.0.0.0", "--port", "8000"]
