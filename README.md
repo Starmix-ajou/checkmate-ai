@@ -3,7 +3,7 @@
 
 ## AI architecture
 - ver 1.0
-[AI Architecture Design](./AI%20아키텍쳐.png)
+![AI Architecture Design](./figure/AI%20아키텍쳐.png)
 
 ## AI Modules
 1. feature_definition/ (기능 정의서 생성):
