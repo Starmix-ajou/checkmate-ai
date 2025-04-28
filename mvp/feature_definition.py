@@ -13,9 +13,11 @@ from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
-REDIS_HOST = "localhost"
-REDIS_PORT = 6379
-REDIS_DB = 0
+load_dotenv()
+
+REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
+REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
+REDIS_DB = int(os.getenv('REDIS_DB', 0))
 
 redis_client = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
 try:
@@ -24,8 +26,6 @@ try:
 except Exception as e:
     logger.error(f"Redis 연결 실패: {e}")
     raise e
-
-load_dotenv()
 
 API_ENDPOINT = "http://localhost:8000/project/definition"
 
