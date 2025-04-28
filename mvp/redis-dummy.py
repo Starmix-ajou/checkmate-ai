@@ -98,7 +98,7 @@ async def reset_data(r):
 
 async def main():
     # Redis 클라이언트 생성
-    r = aioredis.Redis(host=HOST, port=PORT, db=DB, decode_responses=True)
+    r = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
 
     # 연결 확인
     try:

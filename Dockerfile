@@ -5,11 +5,12 @@ FROM  python:3.11-slim
 WORKDIR /app
 
 # 소스 복사
-COPY ./src /app
+COPY ./mvp /app/mvp
+COPY requirements.txt /app/
 
 # 패키지 설치
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
 # Fast API 서버 실행
-CMD ["uvicorn", "integrated_serve.app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "mvp.serve:app", "--host", "0.0.0.0", "--port", "8000"]
