@@ -1,12 +1,16 @@
 import asyncio
 import json
+import os
 
 import redis.asyncio as aioredis
+from dotenv import load_dotenv
 
 # 1) Redis 서버에 연결
-HOST = "localhost"
-PORT = 6379
-DB   = 0
+load_dotenv()
+
+REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
+REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
+REDIS_DB = int(os.getenv('REDIS_DB', 0))
 
 async def initialize_data(r):
     """초기 더미 데이터를 생성합니다. 이미 데이터가 있다면 생성하지 않습니다."""

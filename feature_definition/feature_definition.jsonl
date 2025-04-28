@@ -1,6 +1,0 @@
-{"messages": [
-    {"role": "system", "content": "You are a helpful assistant that writes detailed Feature Definition Documents."},
-    {"role": "user", "content": "Feature Name: 사용자 로그인\nFeature Description: 이메일/비밀번호 입력\nFeature Purpose: 사용자 인증"},
-    {"role": "assistant", "content": "Feature ID: F001\nFeature Name: 사용자 로그인\nFeature Description: 사용자가 이메일과 비밀번호를 입력하여 로그인할 수 있는 기능입니다...\nUse Case Example(s): 사용자 A가 로그인 화면에서 이메일과 비밀번호를 입력하고, 로그인 성공 후 메인 화면으로 이동합니다.\n..."}
-  ]}
-  
