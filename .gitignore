@@ -4,4 +4,4 @@ venv/
 *.pyc
 .env
 db_structure.txt
-AI 아키텍처.png
+.DS_Store
