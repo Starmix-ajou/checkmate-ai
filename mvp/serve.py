@@ -3,9 +3,9 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
-from feature_definition import (create_feature_definition,
+from .feature_definition import (create_feature_definition,
                                 update_feature_definition)
-from feature_specification import (create_feature_specification,
+from .feature_specification import (create_feature_specification,
                                    update_feature_specification)
 from pydantic import BaseModel
 
