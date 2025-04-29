@@ -17,13 +17,12 @@ services:
 
   redis:
     image: redis:latest
-    hostname: redis
+    hostname: redis:latest
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
 
 volumes:
-  redis_data:
-    driver: local
+  - redis_data:/data
+  command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
