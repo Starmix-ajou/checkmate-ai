@@ -9,6 +9,24 @@ redis-cli GET email:test@test.com | jq '.description'
 
 #//--------------------------------------------------------------//
 
+# POST /project/definition 테스트 (1) - 기능 정의서 링크가 존재하는 경우
+curl -X POST http://localhost:8000/project/definition \
+  -H "Content-Type: application/json" \
+  -d '{
+  "email": "test@test.com",
+  "description": "\"LinkNest\"는 사람들이 웹 서핑 중 발견한 유용한 링크들을 한 곳에 저장하고, 카테고리별로 관리할 수 있게 해주는 웹 서비스입니다.",
+  "definitionUrl": "https://drive.google.com/file/d/1HOcZ_GMNMU32ErPNFlGAacD7SLpb0QUN/view?usp=sharing"
+  }'
+
+# POST /project/definition 테스트 (2) - 기능 정의서 링크가 존재하지 않는 경우
+curl -X POST http://localhost:8000/project/definition \
+  -H "Content-Type: application/json" \
+  -d '{
+  "email": "test@test.com",
+  "description": "온라인 체스 게임",
+  "definitionUrl": ""
+  }'
+
 # PUT /project/definition 테스트 (1)
 curl -X PUT http://localhost:8000/project/definition \
   -H "Content-Type: application/json" \
@@ -34,7 +52,7 @@ curl -X PUT http://localhost:8000/project/definition \
 #//--------------------------------------------------------------//
 
 
-
+#//--------------------------------------------------------------//
 
 # POST /project/specification 테스트
 curl -X POST http://localhost:8000/project/specification \
@@ -42,8 +60,6 @@ curl -X POST http://localhost:8000/project/specification \
   -d '{"email": "test@test.com"}'
 
 => 터미널에 프로젝트 정보, 프롬프트 정보, GPT 응답, Redis에 저장된 데이터가 차례대로 잘 반환되는지 확인
-
-#//--------------------------------------------------------------//
 
 # 전체 features 배열 정상적으로 존재하는지 "/project/specification"의 매 Step 마다 확인
 redis-cli GET email:test@test.com | jq '.features'
@@ -53,7 +69,7 @@ curl -X PUT http://localhost:8000/project/specification \
   -H "Content-Type: application/json" \
   -d '{
     "email": "test@test.com",
-    "feedback": "광고 배너 표시 기능의 우선수위를 제일 낮게 변경해줘"
+    "feedback": "광고 배너 표시 기능의 priority가 모든 기능들 중에 제일 낮아지도록 값을 수정해줘"
   }'
 
 # PUT /project/specification 테스트 (2)
