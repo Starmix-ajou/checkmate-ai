@@ -1,38 +1,87 @@
+import datetime
 import json
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import httpx
 import redis.asyncio as aioredis
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-from motor.motor_asyncio import AsyncIOMotorClient
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
+# 최상위 디렉토리의 .env 파일 로드
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
-REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
-REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
-REDIS_DB = int(os.getenv('REDIS_DB', 0))
+# Redis 연결 설정
+REDIS_HOST = os.getenv('REDIS_HOST')
+REDIS_PORT = int(os.getenv('REDIS_PORT'))
+REDIS_DB = int(os.getenv('REDIS_DB'))
+REDIS_PWD = os.getenv('REDIS_PASSWORD')
 
-redis_client = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
-try:
-    pong = redis_client.ping()
-    logger.info(f"Redis 연결 성공: {pong}")
-except Exception as e:
-    logger.error(f"Redis 연결 실패: {e}")
-    raise e
+logger.info(f"Redis 연결 설정: host={REDIS_HOST}, port={REDIS_PORT}, db={REDIS_DB}, password={'*' * len(REDIS_PWD) if REDIS_PWD else None}")
 
-API_ENDPOINT = "http://localhost:8000/project/definition"
+redis_client = aioredis.Redis(
+    host=REDIS_HOST,
+    port=REDIS_PORT,
+    db=REDIS_DB,
+    password=REDIS_PWD,
+    decode_responses=True,
+    socket_timeout=5,
+    socket_connect_timeout=5,
+    retry_on_timeout=True,
+    retry_on_error=[aioredis.ConnectionError, aioredis.TimeoutError]
+)
+
+async def test_redis_connection():
+    try:
+        pong = await redis_client.ping()
+        logger.info(f"Redis 연결 테스트 성공: {pong}")
+        return True
+    except Exception as e:
+        logger.error(f"Redis 연결 실패: {str(e)}")
+        raise Exception(f"Redis 연결 실패: {str(e)}") from e
+
+async def save_to_redis(key: str, data: Union[Dict[str, Any], List[str]]):
+    try:
+        # 딕셔너리를 JSON 문자열로 직렬화
+        if isinstance(data, dict):
+            serialized_data = json.dumps(data, ensure_ascii=False)
+        else:
+            serialized_data = data
+            
+        await redis_client.set(key, serialized_data)
+        logger.info(f"Redis에 데이터 저장 성공: {key}")
+    except Exception as e:
+        logger.error(f"Redis 저장 중 오류 발생: {str(e)}")
+        raise Exception(f"Redis 저장 중 오류 발생: {str(e)}") from e
+
+async def load_from_redis(key: str) -> Union[Dict[str, Any], List[str], None]:
+    try:
+        serialized_data = await redis_client.get(key)
+        if serialized_data:
+            # 이미 JSON으로 파싱된 데이터인지 확인
+            if isinstance(serialized_data, dict):
+                return serialized_data
+            try:
+                return json.loads(serialized_data)
+            except json.JSONDecodeError:
+                return serialized_data
+        return None
+    except Exception as e:
+        logger.error(f"Redis 로드 중 오류 발생: {str(e)}")
+        raise Exception(f"Redis 로드 중 오류 발생: {str(e)}") from e
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-async def create_feature_definition(description: str, definition_url: Optional[str] = None) -> Dict[str, Any]:
+API_ENDPOINT = "http://localhost:8000/project/definition"
+
+
+async def create_feature_definition(email: str, description: str, definition_url: Optional[str] = None) -> Dict[str, Any]:
     """
     기능 정의서를 생성합니다.
     
@@ -54,6 +103,7 @@ async def create_feature_definition(description: str, definition_url: Optional[s
         raise Exception(f"프로젝트 데이터 처리 중 오류 발생: {str(e)}") from e
     
     
+    # 사전 정의된 기능 정의서 존재 여부 확인
     if(project_data.get("definitionUrl")):
         logger.info("기능 정의서가 이미 존재합니다.")
         predefined_definition = project_data.get("definitionUrl")
@@ -64,6 +114,7 @@ async def create_feature_definition(description: str, definition_url: Optional[s
         각 기능은 구현 가능한 작은 단위여야 하고, 반드시 중복되지 않아야 합니다.
         다음은 개발팀이 사전에 정의한 정의서가 존재하는 링크입니다. 링크: {predefined_definition}
         링크의 pdf 파일을 분석해서 이미 정의되어 있는 기능 목록들을 다음의 형식으로 반환해 주세요.
+        이미 정의되어 있는 기능 목록들은 반드시 포함해야 합니다.
         {{
             "features": 
             [
@@ -79,8 +130,7 @@ async def create_feature_definition(description: str, definition_url: Optional[s
                 {{
                     "question": "이런 기능을 추가하시는 건 어떤가요?",
                     "answers": ["결제 기능", "주문 기능", "주문 조회 기능"]
-                }},
-                ...
+                }}
             ]
         }}
         
@@ -110,13 +160,13 @@ async def create_feature_definition(description: str, definition_url: Optional[s
         create_feature_prompt = """
         당신의 역할은 주니어 개발팀의 입장에서 개발하려는 서비스에 필요할 것으로 예상되는 기능 목록을 정의하는 것입니다. 
         각 기능은 구현 가능한 작은 단위여야 하고, 반드시 중복되지 않아야 합니다.
-        다음 형식으로 응답해주세요:
+        다음 형식으로 추가하면 좋을 것으로 예상되는 기능 목록을 제안해 주세요:
         {{
-            "suggestions": 
-            [
-                "로그인 기능",
-                "회원가입 기능",
-                "게시판 기능"
+            "suggestions": [
+                {{
+                    "question": "이런 기능을 추가하시는 건 어떤가요?",
+                    "answers": ["결제 기능", "주문 기능", "주문 조회 기능"]
+                }}
             ]
         }}
         
@@ -154,25 +204,41 @@ async def create_feature_definition(description: str, definition_url: Optional[s
         logger.info(f"정리된 JSON 문자열: {content}")
         feature_names = json.loads(content)
         logger.info(f"파싱된 features: {feature_names}")
+    
     except json.JSONDecodeError as e:
         logger.error(f"JSON 파싱 오류: {str(e)}")
         logger.error(f"파싱 실패한 내용: {content}")
         raise Exception(f"GPT API 응답 파싱 중 오류 발생: {str(e)}") from e
+    
     except Exception as e:
         logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}")
         raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}") from e
         
+    # features, suggestions 추출
+    features = feature_names.get("features", [])
+    suggestions = feature_names.get("suggestions", [])
+    
     # 파싱된 결과 반환
     result = {
         "suggestion": {
-            "features": feature_names.get("features", []),
-            "suggestions": feature_names.get("suggestions", [])
+            "features": features,
+            "suggestions": suggestions
         }
     }
+    logger.info(f"최종 반환 결과: {result}")
+    
+    # Redis에 저장할 데이터 구성 (features와 suggestions의 answers만 포함)
+    all_features = features + [answer for suggestion in suggestions for answer in suggestion["answers"]]
+    redis_data = {
+        "email": email,
+        "features": all_features
+    }
+    
+    # Redis에 저장
+    await save_to_redis(f"email:{email}", redis_data)
+    logger.info(f"Redis에 데이터 저장 완료: {redis_data}")
     
     return result
-
-        
 
 async def update_feature_definition(email: str, feedback: str) -> Dict[str, Any]:
     """
@@ -188,12 +254,15 @@ async def update_feature_definition(email: str, feedback: str) -> Dict[str, Any]
             - isNextStep: 다음 단계 진행 여부 (0: 종료, 1: 계속)
     """
     
-    feature_data = await redis_client.get(f"email:{email}")
+    feature_data = await load_from_redis(f"email:{email}")
     if not feature_data:
         raise ValueError(f"Project information for user {email} not found")
     
-    feature_data = json.loads(feature_data)
-    current_features = feature_data.get("description", [])
+    # 이미 딕셔너리인 경우 JSON 파싱 생략
+    if isinstance(feature_data, str):
+        feature_data = json.loads(feature_data)
+    
+    current_features = feature_data.get("features", [])
     
     # 1. 피드백 분석
     update_prompt = """
@@ -222,7 +291,7 @@ async def update_feature_definition(email: str, feedback: str) -> Dict[str, Any]
     """
     
     formatted_prompt = update_prompt.format(feedback=feedback)
-    response = await openai_client.chat.completions.create(
+    completion = await openai_client.chat.completions.create(
         model="gpt-4o-mini",
         temperature=0.7,
         messages=[
@@ -231,7 +300,7 @@ async def update_feature_definition(email: str, feedback: str) -> Dict[str, Any]
         ]
     )
     
-    if "end" in response.choices[0].message.content.lower():
+    if "end" in completion.choices[0].message.content.lower():
         result = {
             "features": current_features,
             "isNextStep": 0
@@ -307,25 +376,27 @@ async def update_feature_definition(email: str, feedback: str) -> Dict[str, Any]
         raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}") from e
     
     # Redis 업데이트
-    try:
-        # 업데이트 전 데이터 로깅
-        logger.info(f"업데이트 전 Redis 데이터: {feature_data}")
-        
-        # 기능 목록 업데이트
-        feature_data["description"] = updated_features["features"]
-        
-        # 업데이트할 데이터 로깅
-        logger.info(f"업데이트할 Redis 데이터: {feature_data}")
-        
-        # Redis 업데이트
-        await redis_client.set(f"email:{email}", json.dumps(feature_data, ensure_ascii=False))
-        
-        # 업데이트 확인
-        updated_data = await redis_client.get(f"email:{email}")
-        logger.info(f"업데이트 후 Redis 데이터: {updated_data}")
-    except Exception as e:
-        logger.error(f"Redis 업데이트 중 오류 발생: {str(e)}")
-        raise Exception(f"Redis 업데이트 중 오류 발생: {str(e)}") from e
+    # 업데이트 전 데이터 로깅
+    logger.info(f"업데이트 전 Redis 데이터: {feature_data}")
+    
+    # 기능 목록 업데이트
+    feature_data["features"] = updated_features["features"]
+    
+    # 업데이트할 데이터 로깅
+    logger.info(f"업데이트할 Redis 데이터: {feature_data}")
+    
+    # Redis 업데이트
+    redis_data = {
+        "email": email,
+        "features": updated_features["features"]
+    }
+    # Redis에 저장
+    await save_to_redis(f"email:{email}", redis_data)
+    logger.info(f"Redis에 데이터 저장 완료: {redis_data}")
+    
+    # 업데이트 확인
+    updated_data = await load_from_redis(f"email:{email}")
+    logger.info(f"업데이트 후 Redis 데이터: {updated_data}")
     
     # API 응답용 결과 반환
     result = {
