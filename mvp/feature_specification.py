@@ -79,19 +79,19 @@ async def load_from_redis(key: str) -> Union[Dict[str, Any], List[str], None]:
     
 
 # MongoDB 연결 설정
-MONGODB_URI = os.getenv('MONGODB_URI')
-DB_NAME = os.getenv('DB_NAME', 'checkmate')
-mongo_client = AsyncIOMotorClient(MONGODB_URI)
-db = mongo_client[DB_NAME]
-feature_collection = db['features']
+#MONGODB_URI = os.getenv('MONGODB_URI')
+#DB_NAME = os.getenv('DB_NAME', 'checkmate')
+#mongo_client = AsyncIOMotorClient(MONGODB_URI)
+#db = mongo_client[DB_NAME]
+#feature_collection = db['features']
 
-try:
-    # MongoDB 연결 테스트
-    pong = mongo_client.admin.command('ping')
-    logger.info(f"MongoDB 연결 성공: {pong}")
-except Exception as e:
-    logger.error(f"MongoDB 연결 실패: {e}")
-    raise e
+#try:
+# MongoDB 연결 테스트
+#    pong = mongo_client.admin.command('ping')
+#    logger.info(f"MongoDB 연결 성공: {pong}")
+#except Exception as e:
+#    logger.error(f"MongoDB 연결 실패: {e}")
+#    raise e
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -565,21 +565,21 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
     await save_to_redis(f"email:{email}", raw_feature_specification)
     
     # MongoDB에 저장
-    for feature in raw_feature_specification.get("features", []):
-        existing_feature = await feature_collection.find_one({"name": feature["name"]})
-        if existing_feature:
-            await feature_collection.update_one(
-                {"name": feature["name"]},
-                {"$set": feature}
-            )
-            logger.info(f"{feature['name']} 기능 명세서 업데이트 완료")
-        else:
-            await feature_collection.insert_one({
-                "type": "PUT_feature_specification",
-                "features": raw_feature_specification.get("features", []),
-                "created_at": datetime.datetime.utcnow()
-                })
-            logger.info(f"{feature['name']} 기능 명세서 저장 완료")
+    #for feature in raw_feature_specification.get("features", []):
+    #    existing_feature = await feature_collection.find_one({"name": feature["name"]})
+    #    if existing_feature:
+    #        await feature_collection.update_one(
+    #            {"name": feature["name"]},
+    #            {"$set": feature}
+    #        )
+    #        logger.info(f"{feature['name']} 기능 명세서 업데이트 완료")
+    #    else:
+    #        await feature_collection.insert_one({
+    #            "type": "PUT_feature_specification",
+    #            "features": raw_feature_specification.get("features", []),
+    #            "created_at": datetime.datetime.utcnow()
+    #            })
+    #        logger.info(f"{feature['name']} 기능 명세서 저장 완료")
     
     # API 응답 반환
     return {
