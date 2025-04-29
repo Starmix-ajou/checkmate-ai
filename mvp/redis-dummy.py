@@ -1,28 +1,39 @@
 import asyncio
 import json
+import logging
 import os
 
 import redis.asyncio as aioredis
 from dotenv import load_dotenv
 
 # 1) Redis 서버에 연결
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
-REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
-REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
-REDIS_DB = int(os.getenv('REDIS_DB', 0))
+logger = logging.getLogger(__name__)
+
+REDIS_HOST = os.getenv('REDIS_HOST')
+REDIS_PORT = int(os.getenv('REDIS_PORT'))
+REDIS_DB = int(os.getenv('REDIS_DB'))
+
+redis_client = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
+try:
+    pong = redis_client.ping()
+    logger.info(f"Redis 연결 성공: {pong}")
+except Exception as e:
+    logger.error(f"Redis 연결 실패: {e}")
+    raise e
 
 async def initialize_data(r):
     """초기 더미 데이터를 생성합니다. 이미 데이터가 있다면 생성하지 않습니다."""
     # 키 존재 여부 확인
-    exists = await r.exists("email:test@test.com")
+    exists = await r.exists("email:test@dummy.com")
     if exists:
         print("이미 초기 데이터가 존재합니다.")
         return
     
     # 더미 데이터 생성
     project_data = {
-        "email": "test@test.com",
+        "email": "test@dummy.com",
         "members": [
             {
                 "name": "jamie",
@@ -67,7 +78,7 @@ async def initialize_data(r):
 async def check_data(r):
     """Redis에 저장된 현재 데이터를 조회합니다."""
     # 저장된 값 조회
-    raw = await r.get("email:test@test.com")
+    raw = await r.get("email:test@dummy.com")
     if raw:
         data = json.loads(raw)
         print("\n현재 저장된 데이터:")
