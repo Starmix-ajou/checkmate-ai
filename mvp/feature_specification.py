@@ -1,40 +1,102 @@
+import datetime
 import json
 import logging
 import math
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import httpx
 import redis.asyncio as aioredis
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
+from motor.motor_asyncio import AsyncIOMotorClient
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
+# 최상위 디렉토리의 .env 파일 로드
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
-REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
-REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
-REDIS_DB = int(os.getenv('REDIS_DB', 0))
+# Redis 연결 설정
+REDIS_HOST = os.getenv('REDIS_HOST')
+REDIS_PORT = int(os.getenv('REDIS_PORT'))
+REDIS_DB = int(os.getenv('REDIS_DB'))
+REDIS_PWD = os.getenv('REDIS_PASSWORD')
+
+logger.info(f"Redis 연결 설정: host={REDIS_HOST}, port={REDIS_PORT}, db={REDIS_DB}, password={'*' * len(REDIS_PWD) if REDIS_PWD else None}")
 
 redis_client = aioredis.Redis(
-    host=REDIS_HOST, 
-    port=REDIS_PORT, 
-    db=REDIS_DB, 
-    decode_responses=True
-    )
+    host=REDIS_HOST,
+    port=REDIS_PORT,
+    db=REDIS_DB,
+    password=REDIS_PWD,
+    decode_responses=True,
+    socket_timeout=5,
+    socket_connect_timeout=5,
+    retry_on_timeout=True,
+    retry_on_error=[aioredis.ConnectionError, aioredis.TimeoutError]
+)
+
+async def test_redis_connection():
+    try:
+        pong = await redis_client.ping()
+        logger.info(f"Redis 연결 테스트 성공: {pong}")
+        return True
+    except Exception as e:
+        logger.error(f"Redis 연결 실패: {str(e)}")
+        raise Exception(f"Redis 연결 실패: {str(e)}") from e
+
+async def save_to_redis(key: str, data: Union[Dict[str, Any], List[str]]):
+    try:
+        # 딕셔너리를 JSON 문자열로 직렬화
+        if isinstance(data, dict):
+            serialized_data = json.dumps(data, ensure_ascii=False)
+        else:
+            serialized_data = data
+            
+        await redis_client.set(key, serialized_data)
+        logger.info(f"Redis에 데이터 저장 성공: {key}")
+    except Exception as e:
+        logger.error(f"Redis 저장 중 오류 발생: {str(e)}")
+        raise Exception(f"Redis 저장 중 오류 발생: {str(e)}") from e
+
+async def load_from_redis(key: str) -> Union[Dict[str, Any], List[str], None]:
+    try:
+        serialized_data = await redis_client.get(key)
+        if serialized_data:
+            # 이미 JSON으로 파싱된 데이터인지 확인
+            if isinstance(serialized_data, dict):
+                return serialized_data
+            try:
+                return json.loads(serialized_data)
+            except json.JSONDecodeError:
+                return serialized_data
+        return None
+    except Exception as e:
+        logger.error(f"Redis 로드 중 오류 발생: {str(e)}")
+        raise Exception(f"Redis 로드 중 오류 발생: {str(e)}") from e
+    
+
+# MongoDB 연결 설정
+MONGODB_URI = os.getenv('MONGODB_URI')
+DB_NAME = os.getenv('DB_NAME', 'checkmate')
+mongo_client = AsyncIOMotorClient(MONGODB_URI)
+db = mongo_client[DB_NAME]
+feature_collection = db['features']
+
 try:
-    pong = redis_client.ping()
-    logger.info(f"Redis 연결 성공: {pong}")
+    # MongoDB 연결 테스트
+    pong = mongo_client.admin.command('ping')
+    logger.info(f"MongoDB 연결 성공: {pong}")
 except Exception as e:
-    logger.error(f"Redis 연결 실패: {e}")
+    logger.error(f"MongoDB 연결 실패: {e}")
     raise e
 
-API_ENDPOINT = "http://localhost:8000/project/specification"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+
+API_ENDPOINT = "http://localhost:8000/project/specification"
 
 
 def calculate_priority(time_assignment: Dict[str, Any], difficulty_assignment: Dict[str, Any]) -> Dict[str, Any]:
@@ -80,14 +142,15 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         Dict[str, Any]: 기능 명세서 데이터
     """
     # 프로젝트 정보 조회
-    raw_project = await redis_client.get(f"email:{email}")
+    raw_project = await load_from_redis(f"email:{email}")
     if not raw_project:
         raise ValueError(f"Project for user {email} not found")
-    
-    project = json.loads(raw_project)
-    stacks = project.get("stacks", [])
-    members = project.get("members", [])
-    features = project.get("description", [])
+
+    if isinstance(raw_project, str):
+        raw_project = json.loads(raw_project)
+    stacks = raw_project.get("stacks", [])
+    members = raw_project.get("members", [])
+    features = raw_project.get("features", [])
     
     # 필수 데이터 검증
     if not members:
@@ -236,18 +299,14 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
                 "priority": priority_assignment[feature_name],
                 "relfeatIds": [],
                 "embedding": [],
-                "taskId": ""
             }
             features_to_store.append(feature)
         
         # 기존 프로젝트 데이터에 features 추가
-        project["features"] = features_to_store
+        raw_project["features"] = features_to_store
         
         # Redis에 저장
-        await redis_client.set(
-            f"email:{email}",
-            json.dumps(project, ensure_ascii=False)
-        )
+        await save_to_redis(f"email:{email}", raw_project)
         
         # API 응답 반환
         result = {
@@ -266,6 +325,8 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}")
         raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}") from e
 
+
+
 async def update_feature_specification(email: str, feedback: str) -> Dict[str, Any]:
     """
     사용자 피드백을 기반으로 기능 명세서를 업데이트합니다.
@@ -280,13 +341,11 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
             - isNextStep: 다음 단계 진행 여부 (0: 종료, 1: 계속)
     """
     
-    raw_feature_specification = await redis_client.get(f"email:{email}")
+    raw_feature_specification = await load_from_redis(f"email:{email}")
     if not raw_feature_specification:
         raise ValueError(f"Feature specification for user {email} not found")
     
-    # 전체 프로젝트 객체 로드
-    project = json.loads(raw_feature_specification)
-    current_features = project.get("features", [])
+    current_features = raw_feature_specification.get("features", [])
     
     # 피드백 분석 및 기능 업데이트
     update_prompt = ChatPromptTemplate.from_template("""
@@ -329,7 +388,8 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
                 }},
                 "difficulty": {{
                     "difficulty_level": 정수
-                }}
+                }},
+                "priority": 정수
             }}
         ]
     }}
@@ -484,27 +544,42 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
                 "precondition": updated.get("precondition"),
                 "postcondition": updated.get("postcondition"),
                 "assignee": updated.get("assignee", {}).get("name", current_feature.get("assignee")),
-                "stack": updated.get("stack", {}).get("required_stacks", current_feature.get("stack"))
+                "stack": updated.get("stack", {}).get("required_stacks", current_feature.get("stack")),
+                "time": updated.get("time", current_feature.get("time")),
+                "difficulty": updated.get("difficulty", current_feature.get("difficulty")),
             })
             
             # 우선순위 재계산
-            if updated.get("time") and updated.get("difficulty"):
-                time_map = {name: updated["time"]}
-                difficulty_map = {name: updated["difficulty"]}
-                merged_feature["priority"] = calculate_priority(time_map, difficulty_map)[name]
+            time_map = {name: updated.get("time", current_feature.get("time"))}
+            difficulty_map = {name: updated.get("difficulty", current_feature.get("difficulty"))}
+            merged_feature["priority"] = calculate_priority(time_map, difficulty_map)[name]
             
             merged_features.append(merged_feature)
         else:
             merged_features.append(current_feature)
     
     # 프로젝트 객체 업데이트
-    project["features"] = merged_features
+    raw_feature_specification["features"] = merged_features
     
     # Redis에 저장
-    await redis_client.set(
-        f"email:{email}",
-        json.dumps(project, ensure_ascii=False)
-    )
+    await save_to_redis(f"email:{email}", raw_feature_specification)
+    
+    # MongoDB에 저장
+    for feature in raw_feature_specification.get("features", []):
+        existing_feature = await feature_collection.find_one({"name": feature["name"]})
+        if existing_feature:
+            await feature_collection.update_one(
+                {"name": feature["name"]},
+                {"$set": feature}
+            )
+            logger.info(f"{feature['name']} 기능 명세서 업데이트 완료")
+        else:
+            await feature_collection.insert_one({
+                "type": "PUT_feature_specification",
+                "features": raw_feature_specification.get("features", []),
+                "created_at": datetime.datetime.utcnow()
+                })
+            logger.info(f"{feature['name']} 기능 명세서 저장 완료")
     
     # API 응답 반환
     return {
