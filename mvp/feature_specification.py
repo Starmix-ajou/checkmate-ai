@@ -1,10 +1,16 @@
+<<<<<<< HEAD
 import asyncio
+=======
+>>>>>>> 32c09e2 (bugfix: API 호출 request, response 오류 해결)
 import datetime
 import json
 import logging
 import math
 import os
+<<<<<<< HEAD
 import re
+=======
+>>>>>>> 32c09e2 (bugfix: API 호출 request, response 오류 해결)
 from typing import Any, Dict, List, Optional, Union
 
 import httpx
@@ -82,6 +88,7 @@ async def load_from_redis(key: str) -> Union[Dict[str, Any], List[str], None]:
 
 # MongoDB 연결 설정
 MONGODB_URI = os.getenv('MONGODB_URI')
+<<<<<<< HEAD
 DB_NAME = os.getenv('DB_NAME')
 
 logger.info(f"MongoDB 연결 설정: uri={MONGODB_URI}, db={DB_NAME}")
@@ -104,6 +111,25 @@ async def test_mongodb_connection():
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+
+API_ENDPOINT = "http://localhost:8000/project/specification"
+=======
+DB_NAME = os.getenv('DB_NAME', 'checkmate')
+mongo_client = AsyncIOMotorClient(MONGODB_URI)
+db = mongo_client[DB_NAME]
+feature_collection = db['features']
+
+try:
+    # MongoDB 연결 테스트
+    pong = mongo_client.admin.command('ping')
+    logger.info(f"MongoDB 연결 성공: {pong}")
+except Exception as e:
+    logger.error(f"MongoDB 연결 실패: {e}")
+    raise e
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+>>>>>>> 32c09e2 (bugfix: API 호출 request, response 오류 해결)
 
 API_ENDPOINT = "http://localhost:8000/project/specification"
 
@@ -317,6 +343,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         raw_project["features"] = features_to_store
         
         # Redis에 저장
+<<<<<<< HEAD
         try:
             await save_to_redis(f"email:{email}", raw_project)
         except Exception as e:
@@ -330,6 +357,9 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         except Exception as e:
             logger.error(f"feature_specification 초안 MongoDB 저장 실패: {str(e)}")
             raise e
+=======
+        await save_to_redis(f"email:{email}", raw_project)
+>>>>>>> 32c09e2 (bugfix: API 호출 request, response 오류 해결)
         
         # API 응답 반환
         result = {
@@ -573,6 +603,7 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
                 "difficulty": updated.get("difficulty", current_feature.get("difficulty")),
             })
             
+<<<<<<< HEAD
             # GPT 응답에서 받은 priority 값이 있으면 사용, 없으면 재계산
             if "priority" in updated:
                 merged_feature["priority"] = updated["priority"]
@@ -581,11 +612,18 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
                 time_map = {name: updated.get("time", current_feature.get("time"))}
                 difficulty_map = {name: updated.get("difficulty", current_feature.get("difficulty"))}
                 merged_feature["priority"] = calculate_priority(time_map, difficulty_map)[name]
+=======
+            # 우선순위 재계산
+            time_map = {name: updated.get("time", current_feature.get("time"))}
+            difficulty_map = {name: updated.get("difficulty", current_feature.get("difficulty"))}
+            merged_feature["priority"] = calculate_priority(time_map, difficulty_map)[name]
+>>>>>>> 32c09e2 (bugfix: API 호출 request, response 오류 해결)
             
             merged_features.append(merged_feature)
     
     # 프로젝트 객체 업데이트
     raw_feature_specification["features"] = merged_features
+<<<<<<< HEAD
     logger.info("\n=== 업데이트된 feature_specification 데이터 ===")
     logger.info(json.dumps(raw_feature_specification, indent=2, ensure_ascii=False))
     logger.info("=== 데이터 끝 ===\n")
@@ -611,6 +649,28 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
         except Exception as e:
             logger.error(f"업데이트된 feature_specification MongoDB 저장 실패: {str(e)}")
             raise e
+=======
+    
+    # Redis에 저장
+    await save_to_redis(f"email:{email}", raw_feature_specification)
+    
+    # MongoDB에 저장
+    for feature in raw_feature_specification.get("features", []):
+        existing_feature = await feature_collection.find_one({"name": feature["name"]})
+        if existing_feature:
+            await feature_collection.update_one(
+                {"name": feature["name"]},
+                {"$set": feature}
+            )
+            logger.info(f"{feature['name']} 기능 명세서 업데이트 완료")
+        else:
+            await feature_collection.insert_one({
+                "type": "PUT_feature_specification",
+                "features": raw_feature_specification.get("features", []),
+                "created_at": datetime.datetime.utcnow()
+                })
+            logger.info(f"{feature['name']} 기능 명세서 저장 완료")
+>>>>>>> 32c09e2 (bugfix: API 호출 request, response 오류 해결)
     
     # API 응답 반환
     return {

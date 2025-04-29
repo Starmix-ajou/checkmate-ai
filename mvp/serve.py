@@ -6,7 +6,11 @@ import httpx
 import redis.asyncio as aioredis
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
+<<<<<<< HEAD
 #from fastapi.middleware.cors import CORSMiddleware
+=======
+from fastapi.middleware.cors import CORSMiddleware
+>>>>>>> 32c09e2 (bugfix: API 호출 request, response 오류 해결)
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -14,7 +18,10 @@ from .feature_definition import (create_feature_definition,
                                  test_redis_connection,
                                  update_feature_definition)
 from .feature_specification import (create_feature_specification,
+<<<<<<< HEAD
                                     test_mongodb_connection,
+=======
+>>>>>>> 32c09e2 (bugfix: API 호출 request, response 오류 해결)
                                     test_redis_connection,
                                     update_feature_specification)
 
@@ -69,6 +76,7 @@ API_KEY = "OPENAI_API_KEY"
 app = FastAPI(docs_url="/docs")
 
 # CORS 설정
+<<<<<<< HEAD
 #app.add_middleware(
 #    CORSMiddleware,
 #    allow_origins=["*"],
@@ -76,6 +84,15 @@ app = FastAPI(docs_url="/docs")
 #    allow_methods=["*"],
 #    allow_headers=["*"],
 #)
+=======
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+>>>>>>> 32c09e2 (bugfix: API 호출 request, response 오류 해결)
 
 @app.on_event("startup")
 async def startup_event():
@@ -83,10 +100,13 @@ async def startup_event():
         # Redis 연결 테스트
         await test_redis_connection()
         logger.info("Redis 연결 테스트 완료")
+<<<<<<< HEAD
         
         # MongoDB 연결 테스트
         await test_mongodb_connection()
         logger.info("MongoDB 연결 테스트 완료")
+=======
+>>>>>>> 32c09e2 (bugfix: API 호출 request, response 오류 해결)
     except Exception as e:
         logger.error(f"서버 시작 중 오류 발생: {str(e)}")
         raise e
