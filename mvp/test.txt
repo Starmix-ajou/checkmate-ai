@@ -69,7 +69,7 @@ curl -X PUT http://localhost:8000/project/specification \
   -H "Content-Type: application/json" \
   -d '{
     "email": "test@test.com",
-    "feedback": "광고 배너 표시 기능의 priority가 모든 기능들 중에 제일 낮아지도록 값을 수정해줘"
+    "feedback": "name이 광고 배너 표시 기능인 기능의 priority를 10으로 수정"
   }'
 
 # PUT /project/specification 테스트 (2)
