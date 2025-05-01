@@ -1,9 +1,19 @@
 # 가상 환경 dismiss
 venv/
+
+# 환경 변수 파일 dismiss
+.env
+
+# 캐시 파일 dismiss
 */__pycache__/
 *.pyc
-.env
+
+# 프로젝트와 관련된 기타 docs 파일 dismiss
 db_structure.txt
+
+# 모델 학습 및 평가에 사용된 데이터 파일 dismiss
+Korpora/
+AI_hub/
 
 # Created by https://www.toptal.com/developers/gitignore/api/macos,pycharm,visualstudiocode,python
 # Edit at https://www.toptal.com/developers/gitignore?templates=macos,pycharm,visualstudiocode,python
