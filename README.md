@@ -62,3 +62,12 @@
 
 ### Output Embedding
 - use BAAI/bge-m3 in common
+
+
+
+## Fine-tuning
+### 사용한 데이터셋
+1. [Korpora: 네이버 x 창원대 NER 데이터](https://ko-nlp.github.io/Korpora/ko-docs/corpuslist/naver_changwon_ner.html)
+    - Korpora에 업로드된 NER 데이터로, 총 90000개의 샘플이 존재함. 이 중 
+2. [AI Hub: 요약문 및 레포트 생성 데이터](https://aihub.or.kr/aihubdata/data/view.do?dataSetSn=582)
+    - 
