@@ -42,7 +42,6 @@ class FeatureSpecificationPUTRequest(BaseModel):
 
 app = FastAPI(docs_url="/docs")
 
-
 @app.on_event("startup")
 async def startup_event():
     try:
