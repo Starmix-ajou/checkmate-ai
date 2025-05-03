@@ -5,75 +5,16 @@ import os
 from typing import Any, Dict, List, Optional, Union
 
 import httpx
-import redis.asyncio as aioredis
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from openai import AsyncOpenAI
+from redis_setting import load_from_redis, save_to_redis
 
 logger = logging.getLogger(__name__)
 
 # 최상위 디렉토리의 .env 파일 로드
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
-
-# Redis 연결 설정
-REDIS_HOST = os.getenv('REDIS_HOST')
-REDIS_PORT = int(os.getenv('REDIS_PORT'))
-REDIS_DB = int(os.getenv('REDIS_DB'))
-REDIS_PWD = os.getenv('REDIS_PASSWORD')
-
-logger.info(f"Redis 연결 설정: host={REDIS_HOST}, port={REDIS_PORT}, db={REDIS_DB}, password={'*' * len(REDIS_PWD) if REDIS_PWD else None}")
-
-redis_client = aioredis.Redis(
-    host=REDIS_HOST,
-    port=REDIS_PORT,
-    db=REDIS_DB,
-    password=REDIS_PWD,
-    decode_responses=True,
-    socket_timeout=5,
-    socket_connect_timeout=5,
-    retry_on_timeout=True,
-    retry_on_error=[aioredis.ConnectionError, aioredis.TimeoutError]
-)
-
-async def test_redis_connection():
-    try:
-        pong = await redis_client.ping()
-        logger.info(f"Redis 연결 테스트 성공: {pong}")
-        return True
-    except Exception as e:
-        logger.error(f"Redis 연결 실패: {str(e)}")
-        raise Exception(f"Redis 연결 실패: {str(e)}") from e
-
-async def save_to_redis(key: str, data: Union[Dict[str, Any], List[str]]):
-    try:
-        # 딕셔너리를 JSON 문자열로 직렬화
-        if isinstance(data, dict):
-            serialized_data = json.dumps(data, ensure_ascii=False)
-        else:
-            serialized_data = data
-            
-        await redis_client.set(key, serialized_data)
-        logger.info(f"Redis에 데이터 저장 성공: {key}")
-    except Exception as e:
-        logger.error(f"Redis 저장 중 오류 발생: {str(e)}")
-        raise Exception(f"Redis 저장 중 오류 발생: {str(e)}") from e
-
-async def load_from_redis(key: str) -> Union[Dict[str, Any], List[str], None]:
-    try:
-        serialized_data = await redis_client.get(key)
-        if serialized_data:
-            # 이미 JSON으로 파싱된 데이터인지 확인
-            if isinstance(serialized_data, dict):
-                return serialized_data
-            try:
-                return json.loads(serialized_data)
-            except json.JSONDecodeError:
-                return serialized_data
-        return None
-    except Exception as e:
-        logger.error(f"Redis 로드 중 오류 발생: {str(e)}")
-        raise Exception(f"Redis 로드 중 오류 발생: {str(e)}") from e
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -86,6 +27,7 @@ async def create_feature_definition(email: str, description: str, definition_url
     기능 정의서를 생성합니다.
     
     Args:
+        email (str): 사용자 이메일
         description (str): 기능 정의서 텍스트
         definition_url (Optional[str]): 기능 정의서 URL
         
@@ -94,6 +36,7 @@ async def create_feature_definition(email: str, description: str, definition_url
     """
     try:
         project_data = {
+            "email": email,
             "description": description,
             "definitionUrl": definition_url
         }
@@ -235,7 +178,7 @@ async def create_feature_definition(email: str, description: str, definition_url
     }
     
     # Redis에 저장
-    await save_to_redis(f"email:{email}", redis_data)
+    await save_to_redis(f"features:{email}", redis_data)
     logger.info(f"Redis에 데이터 저장 완료: {redis_data}")
     
     return result
@@ -254,7 +197,7 @@ async def update_feature_definition(email: str, feedback: str) -> Dict[str, Any]
             - isNextStep: 다음 단계 진행 여부 (0: 종료, 1: 계속)
     """
     
-    feature_data = await load_from_redis(f"email:{email}")
+    feature_data = await load_from_redis(f"features:{email}")
     if not feature_data:
         raise ValueError(f"Project information for user {email} not found")
     
@@ -391,11 +334,15 @@ async def update_feature_definition(email: str, feedback: str) -> Dict[str, Any]
         "features": updated_features["features"]
     }
     # Redis에 저장
-    await save_to_redis(f"email:{email}", redis_data)
-    logger.info(f"Redis에 데이터 저장 완료: {redis_data}")
+    try:
+        await save_to_redis(f"features:{email}", redis_data)
+        logger.info(f"Redis에 데이터 저장 완료: {redis_data}")
+    except Exception as e:
+        logger.error(f"Redis 저장 중 오류 발생: {str(e)}")
+        raise Exception(f"Redis 저장 중 오류 발생: {str(e)}") from e
     
     # 업데이트 확인
-    updated_data = await load_from_redis(f"email:{email}")
+    updated_data = await load_from_redis(f"features:{email}")
     logger.info(f"업데이트 후 Redis 데이터: {updated_data}")
     
     # API 응답용 결과 반환

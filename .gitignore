@@ -1,3 +1,9 @@
+
+# mvp 배포 시 제외되어야 하는 파일들 dismiss
+mvp/redis-data.json
+mvp/requirements.in
+mvp/create_epic.py
+
 # 가상 환경 dismiss
 venv/
 
@@ -10,6 +16,9 @@ venv/
 
 # 프로젝트와 관련된 기타 docs 파일 dismiss
 db_structure.txt
+tests/
+src/
+test.txt
 
 # 모델 학습 및 평가에 사용된 데이터 파일 dismiss
 Korpora/
