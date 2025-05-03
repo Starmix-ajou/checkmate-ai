@@ -1,138 +1,30 @@
-<<<<<<< HEAD
 import asyncio
-=======
->>>>>>> 32c09e2 (bugfix: API 호출 request, response 오류 해결)
 import datetime
 import json
 import logging
 import math
 import os
-<<<<<<< HEAD
 import re
-=======
->>>>>>> 32c09e2 (bugfix: API 호출 request, response 오류 해결)
 from typing import Any, Dict, List, Optional, Union
 
-import httpx
-import redis.asyncio as aioredis
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-from motor.motor_asyncio import AsyncIOMotorClient
+from mongodb_setting import get_feature_collection
 from openai import AsyncOpenAI
+from redis_setting import load_from_redis, save_to_redis
 
 logger = logging.getLogger(__name__)
-
 # 최상위 디렉토리의 .env 파일 로드
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
-
-# Redis 연결 설정
-REDIS_HOST = os.getenv('REDIS_HOST')
-REDIS_PORT = int(os.getenv('REDIS_PORT'))
-REDIS_DB = int(os.getenv('REDIS_DB'))
-REDIS_PWD = os.getenv('REDIS_PASSWORD')
-
-logger.info(f"Redis 연결 설정: host={REDIS_HOST}, port={REDIS_PORT}, db={REDIS_DB}, password={'*' * len(REDIS_PWD) if REDIS_PWD else None}")
-
-redis_client = aioredis.Redis(
-    host=REDIS_HOST,
-    port=REDIS_PORT,
-    db=REDIS_DB,
-    password=REDIS_PWD,
-    decode_responses=True,
-    socket_timeout=5,
-    socket_connect_timeout=5,
-    retry_on_timeout=True,
-    retry_on_error=[aioredis.ConnectionError, aioredis.TimeoutError]
-)
-
-async def test_redis_connection():
-    try:
-        pong = await redis_client.ping()
-        logger.info(f"Redis 연결 테스트 성공: {pong}")
-        return True
-    except Exception as e:
-        logger.error(f"Redis 연결 실패: {str(e)}")
-        raise Exception(f"Redis 연결 실패: {str(e)}") from e
-
-async def save_to_redis(key: str, data: Union[Dict[str, Any], List[str]]):
-    try:
-        # 딕셔너리를 JSON 문자열로 직렬화
-        if isinstance(data, dict):
-            serialized_data = json.dumps(data, ensure_ascii=False)
-        else:
-            serialized_data = data
-            
-        await redis_client.set(key, serialized_data)
-        logger.info(f"Redis에 데이터 저장 성공: {key}")
-    except Exception as e:
-        logger.error(f"Redis 저장 중 오류 발생: {str(e)}")
-        raise Exception(f"Redis 저장 중 오류 발생: {str(e)}") from e
-
-async def load_from_redis(key: str) -> Union[Dict[str, Any], List[str], None]:
-    try:
-        serialized_data = await redis_client.get(key)
-        if serialized_data:
-            # 이미 JSON으로 파싱된 데이터인지 확인
-            if isinstance(serialized_data, dict):
-                return serialized_data
-            try:
-                return json.loads(serialized_data)
-            except json.JSONDecodeError:
-                return serialized_data
-        return None
-    except Exception as e:
-        logger.error(f"Redis 로드 중 오류 발생: {str(e)}")
-        raise Exception(f"Redis 로드 중 오류 발생: {str(e)}") from e
-    
-
-# MongoDB 연결 설정
-MONGODB_URI = os.getenv('MONGODB_URI')
-<<<<<<< HEAD
-DB_NAME = os.getenv('DB_NAME')
-
-logger.info(f"MongoDB 연결 설정: uri={MONGODB_URI}, db={DB_NAME}")
-
-mongo_client = AsyncIOMotorClient(MONGODB_URI)
-db = mongo_client[DB_NAME]
-
-feature_collection = db['features']
-
-async def test_mongodb_connection():
-    try:
-        pong = await mongo_client.admin.command('ping')
-        logger.info(f"MongoDB 연결 성공: {pong}")
-        return True
-    except Exception as e:
-        logger.error(f"MongoDB 연결 실패: {e}")
-        raise e
-
-# MongoDB 연결 테스트는 startup_event에서 수행됩니다.
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 API_ENDPOINT = "http://localhost:8000/project/specification"
-=======
-DB_NAME = os.getenv('DB_NAME', 'checkmate')
-mongo_client = AsyncIOMotorClient(MONGODB_URI)
-db = mongo_client[DB_NAME]
-feature_collection = db['features']
 
-try:
-    # MongoDB 연결 테스트
-    pong = mongo_client.admin.command('ping')
-    logger.info(f"MongoDB 연결 성공: {pong}")
-except Exception as e:
-    logger.error(f"MongoDB 연결 실패: {e}")
-    raise e
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-client = AsyncOpenAI(api_key=OPENAI_API_KEY)
->>>>>>> 32c09e2 (bugfix: API 호출 request, response 오류 해결)
-
-API_ENDPOINT = "http://localhost:8000/project/specification"
-
+project_members=[]
+feature_collection = get_feature_collection()
 
 def calculate_priority(time_assignment: Dict[str, Any], difficulty_assignment: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -176,42 +68,76 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: 기능 명세서 데이터
     """
+    # 변수 초기화
+    stacks=[]
+    project_members=[]
+    
     # 프로젝트 정보 조회
-    raw_project = await load_from_redis(f"email:{email}")
-    if not raw_project:
+    project_data = await load_from_redis(email)
+    feature_data = await load_from_redis(f"features:{email}")
+    if not project_data:
         raise ValueError(f"Project for user {email} not found")
 
-    if isinstance(raw_project, str):
-        raw_project = json.loads(raw_project)
-    stacks = raw_project.get("stacks", [])
-    members = raw_project.get("members", [])
-    features = raw_project.get("features", [])
+    if isinstance(project_data, str):
+        project_data = json.loads(project_data)
+    
+    # 프로젝트 정보 추출
+    projectId = project_data.get("projectId", "")
+    print(f"프로젝트 아이디: {projectId}")
+    for member in project_data.get("members", []):
+        name = member.get("name")
+        print(f"멤버 이름: {name}")
+        profiles = member.get("profiles", [])
+        print(f"멤버 프로필: {profiles}")
+        for profile in profiles:
+            if profile.get("projectId") == projectId:
+                print(f"프로젝트 아이디 일치: {projectId}")
+                stacks=profile.get("stacks", [])
+                # positions 값이 'string'이 아닌 실제 역할(BE/FE)을 사용하도록 수정
+                position = profile.get("positions", [])[0] if profile.get("positions") else ""
+                if position == "string":
+                    # 이전 프로필에서 BE/FE 값을 찾아서 사용
+                    for prev_profile in profiles:
+                        if prev_profile.get("projectId") != projectId and prev_profile.get("positions"):
+                            prev_position = prev_profile.get("positions")[0]
+                            if prev_position in ["Backend", "Frontend"]:
+                                position = prev_position
+                                break
+                member_info = [
+                    name, 
+                    position,
+                    ", ".join(profile.get("stacks", []))
+                ]
+                project_members.append(", ".join(str(item) for item in member_info))
+    features = feature_data.get("features", [])
+    print(f"프로젝트 멤버: {project_members}")
     
     # 필수 데이터 검증
-    if not members:
-        raise ValueError("프로젝트 멤버 정보가 없습니다.")
     if not stacks:
         raise ValueError("프로젝트 기술 스택 정보가 없습니다.")
+    if not project_members:
+        raise ValueError("프로젝트 멤버 정보가 없습니다.")
     if not features:
         raise ValueError("프로젝트 기능 목록이 없습니다.")
     
     print("\n=== 프로젝트 정보 ===")
     print("스택:", stacks)
-    print("멤버:", members)
+    print("멤버:", project_members)
     print("기능 목록:", features)
     print("=== 프로젝트 정보 끝 ===\n")
     
     # 프롬프트 템플릿 생성
     prompt = ChatPromptTemplate.from_template("""
     당신은 소프트웨어 기능 목록을 분석하여 기능 명세서를 작성하는 일을 도와주는 엔지니어입니다.
-    다음 기능 정의서를 분석하여 각 기능별로 상세 명세를 작성하고, 필요한 정보를 지정해주세요.
+    다음 기능 정의서와 프로젝트 스택 정보, 프로젝트에 참여하는 멤버 정보를 분석하여 
+    각 기능별로 상세 명세를 작성하고, 필요한 정보를 지정해주세요.
     절대 주석을 추가하지 마세요. 당신은 한글이 주언어입니다.
     
-    프로젝트 스택:
+    프로젝트 개발에 사용되는 스택:
     {stacks}
     
-    프로젝트 멤버:
-    {members}
+    프로젝트 멤버별 [이름, 역할, 스택]를 융합한 리스트:
+    {project_members}
     
     기능 정의서:
     {features}
@@ -219,9 +145,9 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     주의사항:
     1. 위 기능 정의서에 나열된 모든 기능에 대해 상세 명세를 작성해주세요.
     2. 새로운 기능을 추가하거나 기존 기능을 제외하지 마세요.
-    3. 각 기능의 이름은 기능 정의서에 나열된 이름을 그대로 사용해주세요.
+    3. 각 기능의 이름은 기능 정의서와 동일하게 사용하고 절대 임의로 바꾸지 마세요.
     4. 담당자 할당 시 각 멤버의 역할(BE/FE)을 고려해주세요.
-    
+    5. 각 기능의 고유 ID는 기능 정의서에 나열된 순서대로 부여해주세요. 형식은 "id_001", "id_002", "id_003", ...로 통일합니다.
     각 기능에 대해 다음 항목들을 JSON 형식으로 응답해주세요:
     {{{{
         "feature_name": {{{{
@@ -252,10 +178,9 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     """)
     
     # 프롬프트에 데이터 전달
-    formatted_members = [f"{member['name']} ({member['role']})" for member in members]
     message = prompt.format_messages(
         stacks="\n".join(stacks),
-        members="\n".join(formatted_members),
+        project_members="\n".join(project_members),
         features="\n".join(features)
     )
     
@@ -340,26 +265,27 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
             features_to_store.append(feature)
         
         # 기존 프로젝트 데이터에 features 추가
-        raw_project["features"] = features_to_store
+        feature_data = features_to_store
         
         # Redis에 저장
-<<<<<<< HEAD
         try:
-            await save_to_redis(f"email:{email}", raw_project)
+            await save_to_redis(f"features:{email}", feature_data)
         except Exception as e:
             logger.error(f"feature_specification 초안 Redis 저장 실패: {str(e)}")
             raise e
         
         # MongoDB에 저장
         try:
-            await feature_collection.insert_many(features_to_store)
+            feature_collection = await get_feature_collection()
+            feature_data_with_timestamp = {
+                "features": feature_data,
+                "created_at": datetime.datetime.utcnow()
+            }
+            await feature_collection.insert_one(feature_data_with_timestamp)
             logger.info("feature_specification 초안 MongoDB 저장 성공")
         except Exception as e:
             logger.error(f"feature_specification 초안 MongoDB 저장 실패: {str(e)}")
             raise e
-=======
-        await save_to_redis(f"email:{email}", raw_project)
->>>>>>> 32c09e2 (bugfix: API 호출 request, response 오류 해결)
         
         # API 응답 반환
         result = {
@@ -394,11 +320,15 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
             - isNextStep: 다음 단계 진행 여부 (0: 종료, 1: 계속)
     """
     
-    raw_feature_specification = await load_from_redis(f"email:{email}")
+    raw_feature_specification = await load_from_redis(f"features:{email}")
+    project_data = await load_from_redis(email)
     if not raw_feature_specification:
         raise ValueError(f"Feature specification for user {email} not found")
     
-    current_features = raw_feature_specification.get("features", [])
+    # Redis에서 가져온 데이터가 문자열인 경우 JSON 파싱
+    if isinstance(raw_feature_specification, str):
+        raw_feature_specification = json.loads(raw_feature_specification)
+    current_features = raw_feature_specification
     
     # 피드백 분석 및 기능 업데이트
     update_prompt = ChatPromptTemplate.from_template("""
@@ -407,6 +337,9 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
 
     현재 기능 목록:
     {current_features}
+    
+    프로젝트 정보:
+    {project_data}
 
     다음은 기능 명세 단계에서 받은 사용자의 피드백입니다:
     {feedback}
@@ -448,6 +381,7 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
     }}
 
     주의사항:
+    0. 반드시 모든 내용을 한국어로 작성해주세요. 만약 한국어로 대체하기 어려운 단어가 있다면 영어를 사용해 주세요.
     1. 반드시 위 JSON 형식을 정확하게 따라주세요.
     2. 모든 문자열은 쌍따옴표로 감싸주세요.
     3. 객체의 마지막 항목에는 쉼표를 넣지 마세요.
@@ -461,6 +395,7 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
     
     messages = update_prompt.format_messages(
         current_features=str(current_features),
+        project_data=str(project_data),
         feedback=feedback
     )
     
@@ -586,91 +521,72 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
     updated_map = {feature["name"]: feature for feature in result["features"]}
     merged_features = []
     
-    # 업데이트된 기능만 처리
-    for name, updated in updated_map.items():
-        current_feature = next((f for f in current_features if f["name"] == name), None)
-        if current_feature:
+    # 기존 기능 리스트 순회
+    for current_feature in current_features:
+        feature_name = current_feature["name"]
+        if feature_name in updated_map:
+            # 업데이트된 기능이 있는 경우
+            updated = updated_map[feature_name]
             merged_feature = current_feature.copy()
+            
+            # time이나 difficulty가 변경되었는지 확인
+            time_changed = updated.get("time") != current_feature.get("time")
+            difficulty_changed = updated.get("difficulty") != current_feature.get("difficulty")
+            
             merged_feature.update({
-                "useCase": updated.get("useCase"),
-                "input": updated.get("input"),
-                "output": updated.get("output"),
-                "precondition": updated.get("precondition"),
-                "postcondition": updated.get("postcondition"),
+                "useCase": updated.get("useCase", current_feature.get("useCase")),
+                "input": updated.get("input", current_feature.get("input")),
+                "output": updated.get("output", current_feature.get("output")),
+                "precondition": updated.get("precondition", current_feature.get("precondition")),
+                "postcondition": updated.get("postcondition", current_feature.get("postcondition")),
                 "assignee": updated.get("assignee", {}).get("name", current_feature.get("assignee")),
                 "stack": updated.get("stack", {}).get("required_stacks", current_feature.get("stack")),
                 "time": updated.get("time", current_feature.get("time")),
-                "difficulty": updated.get("difficulty", current_feature.get("difficulty")),
+                "difficulty": updated.get("difficulty", current_feature.get("difficulty"))
             })
             
-<<<<<<< HEAD
-            # GPT 응답에서 받은 priority 값이 있으면 사용, 없으면 재계산
+            # priority 처리
             if "priority" in updated:
+                # GPT가 직접 priority를 지정한 경우
                 merged_feature["priority"] = updated["priority"]
+            elif time_changed or difficulty_changed:
+                # time이나 difficulty가 변경된 경우 우선순위 재계산
+                time_map = {feature_name: merged_feature["time"]}
+                difficulty_map = {feature_name: merged_feature["difficulty"]}
+                merged_feature["priority"] = calculate_priority(time_map, difficulty_map)[feature_name]
             else:
-                # 우선순위 재계산
-                time_map = {name: updated.get("time", current_feature.get("time"))}
-                difficulty_map = {name: updated.get("difficulty", current_feature.get("difficulty"))}
-                merged_feature["priority"] = calculate_priority(time_map, difficulty_map)[name]
-=======
-            # 우선순위 재계산
-            time_map = {name: updated.get("time", current_feature.get("time"))}
-            difficulty_map = {name: updated.get("difficulty", current_feature.get("difficulty"))}
-            merged_feature["priority"] = calculate_priority(time_map, difficulty_map)[name]
->>>>>>> 32c09e2 (bugfix: API 호출 request, response 오류 해결)
+                # 변경사항이 없는 경우 기존 priority 유지
+                merged_feature["priority"] = current_feature.get("priority")
             
             merged_features.append(merged_feature)
+        else:
+            # 업데이트되지 않은 기능은 그대로 유지
+            merged_features.append(current_feature)
     
-    # 프로젝트 객체 업데이트
-    raw_feature_specification["features"] = merged_features
-<<<<<<< HEAD
+    # 업데이트된 기능 목록으로 교체
     logger.info("\n=== 업데이트된 feature_specification 데이터 ===")
-    logger.info(json.dumps(raw_feature_specification, indent=2, ensure_ascii=False))
+    logger.info(json.dumps(merged_features, indent=2, ensure_ascii=False))
     logger.info("=== 데이터 끝 ===\n")
     
     # Redis에 저장
     try:
-        await save_to_redis(f"email:{email}", raw_feature_specification)
+        await save_to_redis(f"features:{email}", merged_features)
     except Exception as e:
         logger.error(f"업데이트된 feature_specification Redis 저장 실패: {str(e)}")
         raise e
     
     # MongoDB에 저장
-    for feature in raw_feature_specification.get("features", []):
-        try:
-            existing_feature = await feature_collection.find_one({"name": feature["name"]})
-            if existing_feature:
-                feature["updated_at"] = datetime.datetime.utcnow()
-                await feature_collection.update_one(
-                    {"name": feature["name"]},
-                    {"$set": feature}
-                )
-                logger.info(f"{feature['name']} 기능 명세서 업데이트 완료")
-        except Exception as e:
-            logger.error(f"업데이트된 feature_specification MongoDB 저장 실패: {str(e)}")
-            raise e
-=======
-    
-    # Redis에 저장
-    await save_to_redis(f"email:{email}", raw_feature_specification)
-    
-    # MongoDB에 저장
-    for feature in raw_feature_specification.get("features", []):
-        existing_feature = await feature_collection.find_one({"name": feature["name"]})
-        if existing_feature:
-            await feature_collection.update_one(
-                {"name": feature["name"]},
-                {"$set": feature}
-            )
-            logger.info(f"{feature['name']} 기능 명세서 업데이트 완료")
-        else:
-            await feature_collection.insert_one({
-                "type": "PUT_feature_specification",
-                "features": raw_feature_specification.get("features", []),
-                "created_at": datetime.datetime.utcnow()
-                })
-            logger.info(f"{feature['name']} 기능 명세서 저장 완료")
->>>>>>> 32c09e2 (bugfix: API 호출 request, response 오류 해결)
+    try:
+        feature_collection = await get_feature_collection()
+        merged_data_with_timestamp = {
+            "features": merged_features,
+            "updated_at": datetime.datetime.utcnow()
+        }
+        await feature_collection.insert_one(merged_data_with_timestamp)
+        logger.info("업데이트된 feature_specification MongoDB 저장 성공")
+    except Exception as e:
+        logger.error(f"업데이트된 feature_specification MongoDB 저장 실패: {str(e)}")
+        raise e
     
     # API 응답 반환
     return {
