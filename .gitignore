@@ -14,7 +14,7 @@ venv/
 */__pycache__/
 *.pyc
 
-# 프로젝트와 관련된 기타 docs 파일 dismiss
+# 프로젝트와 관련된 기타 docs 및 tests 파일 dismiss
 db_structure.txt
 tests/
 src/

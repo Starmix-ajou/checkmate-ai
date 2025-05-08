@@ -74,7 +74,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     
     # 프로젝트 정보 조회
     project_data = await load_from_redis(email)
-    feature_data = await load_from_redis(f"features:{email}")
+    feature_data = await load_from_redis(f"feature:{email}")
     if not project_data:
         raise ValueError(f"Project for user {email} not found")
 
@@ -151,7 +151,6 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     각 기능에 대해 다음 항목들을 JSON 형식으로 응답해주세요:
     {{{{
         "feature_name": {{{{
-            "feature_id": "기능의 고유 ID",
             "specification": {{{{
                 "useCase": "기능의 사용 사례 설명",
                 "input": "기능에 필요한 입력 데이터",
@@ -162,9 +161,6 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
             "stack": {{{{
                 "required_stacks": ["필수 스택1", "필수 스택2", ...],
                 "optional_stacks": ["선택 스택1", "선택 스택2", ...]
-            }}}},
-            "assignee": {{{{
-                "name": "담당자 이름"
             }}}},
             "time": {{{{
                 "expected_days": 정수
@@ -249,42 +245,27 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         features_to_store = []
         for feature_name, data in result.items():
             feature = {
-                "id": data["feature_id"],
                 "name": feature_name,
                 "useCase": data["specification"]["useCase"],
                 "input": data["specification"]["input"],
                 "output": data["specification"]["output"],
                 "precondition": data["specification"]["precondition"],
                 "postcondition": data["specification"]["postcondition"],
-                "assignee": data["assignee"]["name"],
                 "stack": data["stack"]["required_stacks"],
                 "priority": priority_assignment[feature_name],
                 "relfeatIds": [],
                 "embedding": [],
             }
             features_to_store.append(feature)
-        
+            
         # 기존 프로젝트 데이터에 features 추가
         feature_data = features_to_store
-        
+            
         # Redis에 저장
         try:
-            await save_to_redis(f"features:{email}", feature_data)
+            await save_to_redis(f"feature:{email}", feature_data)
         except Exception as e:
             logger.error(f"feature_specification 초안 Redis 저장 실패: {str(e)}")
-            raise e
-        
-        # MongoDB에 저장
-        try:
-            feature_collection = await get_feature_collection()
-            feature_data_with_timestamp = {
-                "features": feature_data,
-                "created_at": datetime.datetime.utcnow()
-            }
-            await feature_collection.insert_one(feature_data_with_timestamp)
-            logger.info("feature_specification 초안 MongoDB 저장 성공")
-        except Exception as e:
-            logger.error(f"feature_specification 초안 MongoDB 저장 실패: {str(e)}")
             raise e
         
         # API 응답 반환
@@ -320,7 +301,7 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
             - isNextStep: 다음 단계 진행 여부 (0: 종료, 1: 계속)
     """
     
-    raw_feature_specification = await load_from_redis(f"features:{email}")
+    raw_feature_specification = await load_from_redis(f"feature:{email}")
     project_data = await load_from_redis(email)
     if not raw_feature_specification:
         raise ValueError(f"Feature specification for user {email} not found")
@@ -353,7 +334,7 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
 
     다음 형식으로 응답해주세요:
     {{
-        "isNextStep": 0 또는 1,  # 0: 종료, 1: 계속
+        "isNextStep": 0 또는 1,  # 0: 수정/삭제 요청, 1: 종료 요청
         "features": [
             {{
                 "name": "기능명",
@@ -362,9 +343,6 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
                 "output": "출력 결과",
                 "precondition": "기능 실행 전 만족해야 할 조건",
                 "postcondition": "기능 실행 후 보장되는 조건",
-                "assignee": {{
-                    "name": "담당자 이름"
-                }},
                 "stack": {{
                     "required_stacks": ["필수 스택1", "필수 스택2"],
                     "optional_stacks": ["선택 스택1", "선택 스택2"]
@@ -386,7 +364,7 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
     2. 모든 문자열은 쌍따옴표로 감싸주세요.
     3. 객체의 마지막 항목에는 쉼표를 넣지 마세요.
     4. 수정된 기능만 포함하고, 수정되지 않은 기능은 제외해주세요.
-    5. isNextStep은 사용자의 피드백이 종료 요청인 경우 0, 수정/삭제 요청인 경우 1로 설정해주세요.
+    5. isNextStep은 사용자의 피드백이 종료 요청인 경우 1, 수정/삭제 요청인 경우 0으로 설정해주세요.
     6. 각 기능의 모든 필드를 포함해주세요.
     7. difficulty_level은 1에서 5 사이의 정수여야 합니다.
     8. expected_days는 양의 정수여야 합니다.
@@ -484,14 +462,11 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
         for feature in result["features"]:
             required_fields = [
                 "name", "useCase", "input", "output", "precondition", "postcondition",
-                "assignee", "stack", "time", "difficulty"
+                "stack", "time", "difficulty"
             ]
             for field in required_fields:
                 if field not in feature:
                     raise ValueError(f"기능 '{feature.get('name', 'unknown')}'에 '{field}' 필드가 누락되었습니다.")
-            
-            if not isinstance(feature["assignee"], dict) or "name" not in feature["assignee"]:
-                raise ValueError(f"기능 '{feature['name']}'의 assignee 형식이 잘못되었습니다.")
             
             if not isinstance(feature["stack"], dict) or "required_stacks" not in feature["stack"]:
                 raise ValueError(f"기능 '{feature['name']}'의 stack 형식이 잘못되었습니다.")
@@ -539,7 +514,6 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
                 "output": updated.get("output", current_feature.get("output")),
                 "precondition": updated.get("precondition", current_feature.get("precondition")),
                 "postcondition": updated.get("postcondition", current_feature.get("postcondition")),
-                "assignee": updated.get("assignee", {}).get("name", current_feature.get("assignee")),
                 "stack": updated.get("stack", {}).get("required_stacks", current_feature.get("stack")),
                 "time": updated.get("time", current_feature.get("time")),
                 "difficulty": updated.get("difficulty", current_feature.get("difficulty"))
@@ -570,23 +544,32 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
     
     # Redis에 저장
     try:
-        await save_to_redis(f"features:{email}", merged_features)
+        await save_to_redis(f"feature:{email}", merged_features)
     except Exception as e:
         logger.error(f"업데이트된 feature_specification Redis 저장 실패: {str(e)}")
         raise e
     
-    # MongoDB에 저장
-    try:
-        feature_collection = await get_feature_collection()
-        merged_data_with_timestamp = {
-            "features": merged_features,
-            "updated_at": datetime.datetime.utcnow()
-        }
-        await feature_collection.insert_one(merged_data_with_timestamp)
-        logger.info("업데이트된 feature_specification MongoDB 저장 성공")
-    except Exception as e:
-        logger.error(f"업데이트된 feature_specification MongoDB 저장 실패: {str(e)}")
-        raise e
+    # 다음 단게로 넘어가는 경우, MongoDB에 Redis의 데이터를 옮겨서 저장
+    if result["isNextStep"] == 1:
+        try:
+            feature_collection = await get_feature_collection()
+            for feat in merged_features:
+                feature_data = {
+                    "projectId": project_data["projectId"],
+                    "feature": feat,
+                    "createdAt": datetime.datetime.utcnow()
+                }
+                try:
+                    result = await feature_collection.insert_one(feature_data)
+                    feat["featureId"] = str(result.inserted_id)
+                    logger.info(f"{feat['name']} MongoDB 저장 성공 (ID: {feat['featureId']})")
+                except Exception as e:
+                    logger.error(f"{feat['name']} MongoDB 저장 실패: {str(e)}")
+                    raise e
+            logger.info("모든 feature MongoDB 저장 완료")
+        except Exception as e:
+            logger.error(f"feature_specification MongoDB 저장 실패: {str(e)}")
+            raise e
     
     # API 응답 반환
     return {
