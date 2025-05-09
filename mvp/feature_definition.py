@@ -4,6 +4,8 @@ import logging
 import os
 from typing import Any, Dict, List, Optional, Union
 
+import aiofiles
+import aiohttp
 import httpx
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
@@ -32,24 +34,45 @@ async def create_feature_definition(email: str, description: str, definition_url
         definition_url (Optional[str]): 기능 정의서 URL
         
     Returns:
-        Dict[str, Any]: 생성된 기능 목록
+        Dict[str, Any]: 기능 정의서 데이터
     """
     try:
-        project_data = {
+        given_data = {
             "email": email,
             "description": description,
             "definitionUrl": definition_url
         }
-        user_input = description  # user_input 변수 초기화
+
     except Exception as e:
         logger.error(f"프로젝트 데이터 처리 중 오류 발생: {str(e)}")
         raise Exception(f"프로젝트 데이터 처리 중 오류 발생: {str(e)}") from e
     
+    # user_input은 기능 및 서비스에 대한 description으로서 사전 정의된 기능 정의서 여부와 관계없이 사용됨.
+    user_input = given_data.get("description")
     
     # 사전 정의된 기능 정의서 존재 여부 확인
-    if(project_data.get("definitionUrl")):
+    if(given_data.get("definitionUrl")):
         logger.info("기능 정의서가 이미 존재합니다.")
-        predefined_definition = project_data.get("definitionUrl")
+        try:
+            asset_dir=os.path.join(os.path.dirname(os.path.dirname(__file__)), "asset")
+            os.makedirs(asset_dir, exist_ok=True)
+            
+            filename=os.path.basename(predefined_definition)
+            file_path=os.path.join(asset_dir, filename)
+        
+            async with aiohttp.ClientSession() as session:
+                async with session.get(predefined_definition) as response:
+                    if response.status == 200:
+                        async with aiofiles.open(file_path, mode="wb") as f:
+                            await f.write(await response.content.read())
+                        
+                        async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
+                            predefined_definition = await f.read()
+                    else:
+                        logger.error(f"기능 정의서 다운로드 실패: {response.status}")
+        except Exception as e:
+            logger.error(f"기능 정의서 다운로드 중 오류 발생: {str(e)}")
+            raise Exception(f"기능 정의서 다운로드 중 오류 발생: {str(e)}") from e
         
         # GPT API 호출을 위한 프롬프트 정의
         create_feature_prompt = """
@@ -194,7 +217,7 @@ async def update_feature_definition(email: str, feedback: str) -> Dict[str, Any]
     Returns:
         Dict[str, Any]: 업데이트된 기능 정의서 데이터
             - features: 업데이트된 기능 목록
-            - isNextStep: 다음 단계 진행 여부 (0: 종료, 1: 계속)
+            - isNextStep: 다음 단계 진행 여부 (1: 종료, 0: 계속)
     """
     
     feature_data = await load_from_redis(f"features:{email}")
@@ -246,7 +269,7 @@ async def update_feature_definition(email: str, feedback: str) -> Dict[str, Any]
     if "end" in completion.choices[0].message.content.lower():
         result = {
             "features": current_features,
-            "isNextStep": 0
+            "isNextStep": 1
         }
         return result
     
@@ -348,7 +371,7 @@ async def update_feature_definition(email: str, feedback: str) -> Dict[str, Any]
     # API 응답용 결과 반환
     result = {
         "features": updated_features["features"],
-        "isNextStep": 1
+        "isNextStep": 0
     }
     
     return result

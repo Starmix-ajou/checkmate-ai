@@ -68,6 +68,6 @@
 ## Fine-tuning
 ### 사용한 데이터셋
 1. [Korpora: 네이버 x 창원대 NER 데이터](https://ko-nlp.github.io/Korpora/ko-docs/corpuslist/naver_changwon_ner.html)
-    - Korpora에 업로드된 NER 데이터로, 총 90000개의 샘플이 존재함. 이 중 
+    - Korpora에 업로드된 NER 데이터로, 총 90000개의 샘플이 존재함. 해당 데이터와 동일한 개체명 분류 기준을 채택하여 2번의 AI Hub 데이터에 대해 개체명을 부여함.
 2. [AI Hub: 요약문 및 레포트 생성 데이터](https://aihub.or.kr/aihubdata/data/view.do?dataSetSn=582)
-    - 
+    - 8종류의 서로 다른 자연어 문서에 대한 데이터. 이 중에서 4번 paper(정책 토론회), 5번 minute(공공기관 부서 및 부처 회의록) 데이터를 사용함. Korpora와 유사하게 개체명을 gpt를 사용하여 부여하고, 5번 minute 데이터를 파인튜닝 용으로 사용함.
