@@ -293,6 +293,10 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
                 for data in result
             ]
         }
+        
+        print(result)
+        
+        
         return result
     except Exception as e:
         logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}")
@@ -602,7 +606,7 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
                 "input": feature["input"],
                 "output": feature["output"]
             }
-            for feature in result["features"]
+            for feature in merged_features
         ],
         "isNextStep": result["isNextStep"]
     }
