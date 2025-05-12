@@ -38,6 +38,9 @@ class FeatureSpecificationPUTRequest(BaseModel):
     email: str
     feedback: str
     
+class EpicPOSTRequest(BaseModel):
+    projectId: str
+    pendingTasksIds: List[str]
 
 
 app = FastAPI(docs_url="/docs")
@@ -121,6 +124,19 @@ async def put_specification(request: FeatureSpecificationPUTRequest):
             detail=f"기능 명세서 업데이트 중 오류 발생: {str(e)}"
         )
 
+#@app.post("/sprint", response_model=Dict[str, Any])
+#async def post_epic(request: EpicPOSTRequest):
+#    try:
+#        logger.info(f"📨 POST /epic 요청 수신: {request}")
+#        result = await create_sprint(request.projectId, request.pendingTasksIds)
+#        logger.info(f"✅ 처리 결과: {result}")
+#        return result
+#    except Exception as e:
+#        logger.error(f"🔥 예외 발생: {str(e)}")
+#        raise HTTPException(
+#            status_code=500,
+#            detail=f"스프린트 생성 중 오류 발생: {str(e)}"
+#        )
 
 
 # 실행 예시

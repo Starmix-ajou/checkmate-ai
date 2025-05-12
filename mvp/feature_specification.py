@@ -26,37 +26,53 @@ API_ENDPOINT = "http://localhost:8000/project/specification"
 project_members=[]
 feature_collection = get_feature_collection()
 
-def calculate_priority(time_assignment: Dict[str, Any], difficulty_assignment: Dict[str, Any]) -> Dict[str, Any]:
+def calculate_priority(expected_days: int, difficulty: int) -> int:
     """
     개발 예상 시간과 난이도를 기반으로 우선순위를 계산합니다.
     
     Args:
-        time_assignment (Dict[str, Any]): 개발 예상 시간 데이터
-        difficulty_assignment (Dict[str, Any]): 개발 난이도 데이터
+        expected_days (int): 개발 예상 시간
+        difficulty (int): 개발 난이도
         
     Returns:
-        Dict[str, Any]: 우선순위가 계산된 데이터
+        int: 우선순위가 계산된 데이터
     """
-    priority_assignment = {}
     
-    for feature_name in time_assignment.keys():
-        # 시간과 난이도의 가중치 (시간이 더 중요하다고 가정)
-        time_weight = 0.6
-        difficulty_weight = 0.4
-        
-        # 정규화된 시간 점수 (시간이 짧을수록 점수가 높음)
-        time_score = 1 - (time_assignment[feature_name]["expected_days"] / 30)  # 30일을 최대치로 가정
-        
-        # 정규화된 난이도 점수 (난이도가 낮을수록 점수가 높음)
-        difficulty_score = 1 - ((difficulty_assignment[feature_name]["difficulty_level"] - 1) / 4)
-        
-        # 최종 우선순위 점수 계산
-        priority_score = (time_score * time_weight) + (difficulty_score * difficulty_weight)
-        
-        # 1-100 범위로 변환 (점수가 높을수록 우선순위가 높음)
-        priority_assignment[feature_name] = math.ceil(priority_score * 100)
+    # 시간과 난이도의 가중치 (시간이 더 중요하다고 가정)
+    time_weight = 0.6
+    difficulty_weight = 0.4
     
-    return priority_assignment
+    # 정규화된 시간 점수 (시간이 짧을수록 점수가 높음)
+    time_score = 1 - (expected_days / 30)  # 30일을 최대치로 가정
+        
+    # 정규화된 난이도 점수 (난이도가 낮을수록 점수가 높음)
+    difficulty_score = 1 - ((difficulty - 1) / 4)
+        
+    # 최종 우선순위 점수 계산
+    priority_score = (time_score * time_weight) + (difficulty_score * difficulty_weight)
+        
+    # 1-300 범위로 변환 (점수가 높을수록 우선순위가 높음)
+    priority = math.ceil(priority_score * 300)
+    
+    return priority
+
+# 안전하게 #이 문자열 안에 있는 경우는 제거하지 않음
+def remove_comments_safe(content: str) -> str:
+    result = []
+    in_string = False
+    i = 0
+    while i < len(content):
+        char = content[i]
+        if char == '"' and (i == 0 or content[i - 1] != '\\'):
+            in_string = not in_string
+        if char == '#' and not in_string:
+            while i < len(content) and content[i] != '\n':
+                i += 1
+            continue
+        result.append(char)
+        i += 1
+    return ''.join(result)
+
 
 async def create_feature_specification(email: str) -> Dict[str, Any]:
     """
@@ -74,7 +90,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     
     # 프로젝트 정보 조회
     project_data = await load_from_redis(email)
-    feature_data = await load_from_redis(f"feature:{email}")
+    feature_data = await load_from_redis(f"features:{email}")
     if not project_data:
         raise ValueError(f"Project for user {email} not found")
 
@@ -83,6 +99,8 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     
     # 프로젝트 정보 추출
     projectId = project_data.get("projectId", "")
+    project_start_date = project_data.get("startDate", "")
+    project_end_date = project_data.get("endDate", "")
     print(f"프로젝트 아이디: {projectId}")
     for member in project_data.get("members", []):
         name = member.get("name")
@@ -124,6 +142,8 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     print("스택:", stacks)
     print("멤버:", project_members)
     print("기능 목록:", features)
+    print("시작일:", project_start_date)
+    print("종료일:", project_end_date)
     print("=== 프로젝트 정보 끝 ===\n")
     
     # 프롬프트 템플릿 생성
@@ -139,45 +159,45 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     프로젝트 멤버별 [이름, 역할, 스택]를 융합한 리스트:
     {project_members}
     
-    기능 정의서:
+    정의되어 있는 기능 목록:
     {features}
+    
+    프로젝트 시작일:
+    {startDate}
+    프로젝트 종료일:
+    {endDate}
     
     주의사항:
     1. 위 기능 정의서에 나열된 모든 기능에 대해 상세 명세를 작성해주세요.
     2. 새로운 기능을 추가하거나 기존 기능을 제외하지 마세요.
     3. 각 기능의 이름은 기능 정의서와 동일하게 사용하고 절대 임의로 바꾸지 마세요.
     4. 담당자 할당 시 각 멤버의 역할(BE/FE)을 고려해주세요.
-    5. 각 기능의 고유 ID는 기능 정의서에 나열된 순서대로 부여해주세요. 형식은 "id_001", "id_002", "id_003", ...로 통일합니다.
+    5. 기능 별 startDate와 endDate는 프로젝트 시작일인 {startDate}와 종료일인 {endDate} 사이에 있어야 하며, 그 기간이 expected_days와 일치해야 합니다.
+    6. input과 output은 반드시 string으로 반환하세요.
     각 기능에 대해 다음 항목들을 JSON 형식으로 응답해주세요:
     {{{{
-        "feature_name": {{{{
-            "specification": {{{{
-                "useCase": "기능의 사용 사례 설명",
-                "input": "기능에 필요한 입력 데이터",
-                "output": "기능의 출력 결과",
-                "precondition": "기능 실행 전 만족해야 할 조건",
-                "postcondition": "기능 실행 후 보장되는 조건"
-            }}}},
-            "stack": {{{{
-                "required_stacks": ["필수 스택1", "필수 스택2", ...],
-                "optional_stacks": ["선택 스택1", "선택 스택2", ...]
-            }}}},
-            "time": {{{{
-                "expected_days": 정수
-            }}}},
-            "difficulty": {{{{
-                "difficulty_level": 1-5
-            }}}}
-        }}}},
+        "name": "기능명",
+        "useCase": "기능의 사용 사례 설명",
+        "input": "기능에 필요한 입력 데이터",
+        "output": "기능의 출력 결과",
+        "precondition": "기능 실행 전 만족해야 할 조건",
+        "postcondition": "기능 실행 후 보장되는 조건",
+        "stack": ["필수 스택1", "필수 스택2", ...],
+        "expected_days": 정수,
+        "startDate": "YYYY-MM-DD로 정의되는 기능 시작일",
+        "endDate": "YYYY-MM-DD로 정의되는 기능 종료일",
+        "difficulty": 1-5
         ...
     }}}}
     """)
     
     # 프롬프트에 데이터 전달
     message = prompt.format_messages(
-        stacks="\n".join(stacks),
-        project_members="\n".join(project_members),
-        features="\n".join(features)
+        stacks=stacks,
+        project_members=project_members,
+        features=features,
+        startDate=project_start_date,
+        endDate=project_end_date
     )
     
     # LLM 호출
@@ -207,16 +227,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         content = content.replace("\n", "").replace("  ", " ").strip()
         
         # 주석 제거 (# 이후의 텍스트 제거)
-        content_lines = content.split("#")
-        content = content_lines[0]
-        for i in range(1, len(content_lines)):
-            # #이 JSON 문자열 안에 있을 수 있으므로, 다음 { 또는 , 가 나오는 부분부터 다시 포함
-            next_part = content_lines[i]
-            json_continue = next_part.find("{")
-            if json_continue == -1:
-                json_continue = next_part.find(",")
-            if json_continue != -1:
-                content += next_part[json_continue:]
+        content = remove_comments_safe(content)
         
         logger.info("\n=== 정리된 JSON 문자열 ===")
         logger.info(content)
@@ -237,24 +248,26 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
             logger.error("=== 분석 끝 ===\n")
             raise Exception(f"JSON 파싱 실패: {str(e)}") from e
         
-        # 우선순위 계산
-        time_assignment = {name: data["time"] for name, data in result.items()}
-        difficulty_assignment = {name: data["difficulty"] for name, data in result.items()}
-        priority_assignment = calculate_priority(time_assignment, difficulty_assignment)
         
+        logger.debug(f"응답 파싱 후 result 타입: {type(result)}, 내용: {repr(result)[:500]}")   # 현재 List 반환 중
         features_to_store = []
-        for feature_name, data in result.items():
+        for data in result:
+            feature_name = data["name"]
             feature = {
                 "name": feature_name,
-                "useCase": data["specification"]["useCase"],
-                "input": data["specification"]["input"],
-                "output": data["specification"]["output"],
-                "precondition": data["specification"]["precondition"],
-                "postcondition": data["specification"]["postcondition"],
-                "stack": data["stack"]["required_stacks"],
-                "priority": priority_assignment[feature_name],
+                "useCase": data["useCase"],
+                "input": data["input"],
+                "output": data["output"],
+                "precondition": data["precondition"],
+                "postcondition": data["postcondition"],
+                "stack": data["stack"],
+                "priority": calculate_priority(data["expected_days"], data["difficulty"]),
                 "relfeatIds": [],
                 "embedding": [],
+                "startDate": data["startDate"],
+                "endDate": data["endDate"],
+                "expected_days": data["expected_days"],
+                "difficulty": data["difficulty"]
             }
             features_to_store.append(feature)
             
@@ -263,7 +276,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
             
         # Redis에 저장
         try:
-            await save_to_redis(f"feature:{email}", feature_data)
+            await save_to_redis(f"features:{email}", feature_data)
         except Exception as e:
             logger.error(f"feature_specification 초안 Redis 저장 실패: {str(e)}")
             raise e
@@ -272,12 +285,12 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         result = {
             "features": [
                 {
-                    "name": feature_name,
-                    "useCase": data["specification"]["useCase"],
-                    "input": data["specification"]["input"],
-                    "output": data["specification"]["output"]
+                    "name": data["name"],
+                    "useCase": data["useCase"],
+                    "input": data["input"],
+                    "output": data["output"]
                 }
-                for feature_name, data in result.items()
+                for data in result
             ]
         }
         return result
@@ -301,7 +314,7 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
             - isNextStep: 다음 단계 진행 여부 (0: 종료, 1: 계속)
     """
     
-    raw_feature_specification = await load_from_redis(f"feature:{email}")
+    raw_feature_specification = await load_from_redis(f"features:{email}")
     project_data = await load_from_redis(email)
     if not raw_feature_specification:
         raise ValueError(f"Feature specification for user {email} not found")
@@ -310,6 +323,9 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
     if isinstance(raw_feature_specification, str):
         raw_feature_specification = json.loads(raw_feature_specification)
     current_features = raw_feature_specification
+    
+    startDate = project_data.get("startDate")
+    endDate = project_data.get("endDate")
     
     # 피드백 분석 및 기능 업데이트
     update_prompt = ChatPromptTemplate.from_template("""
@@ -343,16 +359,11 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
                 "output": "출력 결과",
                 "precondition": "기능 실행 전 만족해야 할 조건",
                 "postcondition": "기능 실행 후 보장되는 조건",
-                "stack": {{
-                    "required_stacks": ["필수 스택1", "필수 스택2"],
-                    "optional_stacks": ["선택 스택1", "선택 스택2"]
-                }},
-                "time": {{
-                    "expected_days": 정수
-                }},
-                "difficulty": {{
-                    "difficulty_level": 정수
-                }},
+                "stack": ["필수 스택1", "필수 스택2"],
+                "expected_days": 정수,
+                "startDate": "YYYY-MM-DD로 정의되는 기능 시작일",
+                "endDate": "YYYY-MM-DD로 정의되는 기능 종료일"
+                "difficulty": 1-5,
                 "priority": 정수
             }}
         ]
@@ -366,15 +377,18 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
     4. 수정된 기능만 포함하고, 수정되지 않은 기능은 제외해주세요.
     5. isNextStep은 사용자의 피드백이 종료 요청인 경우 1, 수정/삭제 요청인 경우 0으로 설정해주세요.
     6. 각 기능의 모든 필드를 포함해주세요.
-    7. difficulty_level은 1에서 5 사이의 정수여야 합니다.
+    7. difficulty는 1에서 5 사이의 정수여야 합니다.
     8. expected_days는 양의 정수여야 합니다.
     9. 절대 주석을 추가하지 마세요.
+    10. startDate와 endDate는 프로젝트 시작일인 {startDate}와 종료일인 {endDate} 사이에 있어야 하며, 그 기간이 expected_days와 일치해야 합니다.
     """)
     
     messages = update_prompt.format_messages(
         current_features=str(current_features),
         project_data=str(project_data),
-        feedback=feedback
+        feedback=feedback,
+        startDate=startDate,
+        endDate=endDate
     )
     
     # LLM Config
@@ -462,27 +476,24 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
         for feature in result["features"]:
             required_fields = [
                 "name", "useCase", "input", "output", "precondition", "postcondition",
-                "stack", "time", "difficulty"
+                "stack", "expected_days", "startDate", "endDate", "difficulty"
             ]
             for field in required_fields:
                 if field not in feature:
                     raise ValueError(f"기능 '{feature.get('name', 'unknown')}'에 '{field}' 필드가 누락되었습니다.")
             
-            if not isinstance(feature["stack"], dict) or "required_stacks" not in feature["stack"]:
+            if not isinstance(feature["stack"], list):
                 raise ValueError(f"기능 '{feature['name']}'의 stack 형식이 잘못되었습니다.")
             
-            if not isinstance(feature["time"], dict) or "expected_days" not in feature["time"]:
-                raise ValueError(f"기능 '{feature['name']}'의 time 형식이 잘못되었습니다.")
-            
-            if not isinstance(feature["difficulty"], dict) or "difficulty_level" not in feature["difficulty"]:
-                raise ValueError(f"기능 '{feature['name']}'의 difficulty 형식이 잘못되었습니다.")
-            
-            if not isinstance(feature["time"]["expected_days"], int) or feature["time"]["expected_days"] <= 0:
+            if not isinstance(feature["expected_days"], int) or feature["expected_days"] <= 0:
                 raise ValueError(f"기능 '{feature['name']}'의 expected_days는 양의 정수여야 합니다.")
             
-            if not isinstance(feature["difficulty"]["difficulty_level"], int) or \
-               not 1 <= feature["difficulty"]["difficulty_level"] <= 5:
-                raise ValueError(f"기능 '{feature['name']}'의 difficulty_level은 1에서 5 사이의 정수여야 합니다.")
+            if not isinstance(feature["difficulty"], int) or not 1 <= feature["difficulty"] <= 5:
+                raise ValueError(f"기능 '{feature['name']}'의 difficulty 형식이 잘못되었습니다.")
+            
+            if not feature["startDate"] >= startDate or not feature["endDate"] <= endDate:
+                raise ValueError(f"기능 '{feature['name']}'의 startDate와 endDate는 프로젝트 시작일인 {startDate}와 종료일인 {endDate} 사이에 있어야 합니다.")
+            
 
         logger.info("\n=== 검증된 결과 ===")
         logger.info(json.dumps(result, indent=2, ensure_ascii=False))
@@ -504,33 +515,33 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
             updated = updated_map[feature_name]
             merged_feature = current_feature.copy()
             
-            # time이나 difficulty가 변경되었는지 확인
-            time_changed = updated.get("time") != current_feature.get("time")
-            difficulty_changed = updated.get("difficulty") != current_feature.get("difficulty")
+            # expected_days나 difficulty가 변경되었는지 확인
+            expected_days_changed = updated["expected_days"] != current_feature["expected_days"]
+            difficulty_changed = updated["difficulty"] != current_feature["difficulty"]
             
             merged_feature.update({
-                "useCase": updated.get("useCase", current_feature.get("useCase")),
-                "input": updated.get("input", current_feature.get("input")),
-                "output": updated.get("output", current_feature.get("output")),
-                "precondition": updated.get("precondition", current_feature.get("precondition")),
-                "postcondition": updated.get("postcondition", current_feature.get("postcondition")),
-                "stack": updated.get("stack", {}).get("required_stacks", current_feature.get("stack")),
-                "time": updated.get("time", current_feature.get("time")),
-                "difficulty": updated.get("difficulty", current_feature.get("difficulty"))
+                "useCase": updated["useCase"],
+                "input": updated["input"],
+                "output": updated["output"],
+                "precondition": updated["precondition"],
+                "postcondition": updated["postcondition"],
+                "stack": updated["stack"],
+                "expected_days": updated["expected_days"],
+                "startDate": updated["startDate"],
+                "endDate": updated["endDate"],
+                "difficulty": updated["difficulty"]
             })
             
             # priority 처리
             if "priority" in updated:
                 # GPT가 직접 priority를 지정한 경우
                 merged_feature["priority"] = updated["priority"]
-            elif time_changed or difficulty_changed:
-                # time이나 difficulty가 변경된 경우 우선순위 재계산
-                time_map = {feature_name: merged_feature["time"]}
-                difficulty_map = {feature_name: merged_feature["difficulty"]}
-                merged_feature["priority"] = calculate_priority(time_map, difficulty_map)[feature_name]
+            elif expected_days_changed or difficulty_changed:
+                # expected_days나 difficulty가 변경된 경우 우선순위 재계산
+                merged_feature["priority"] = calculate_priority(merged_feature["expected_days"], merged_feature["difficulty"])
             else:
                 # 변경사항이 없는 경우 기존 priority 유지
-                merged_feature["priority"] = current_feature.get("priority")
+                merged_feature["priority"] = current_feature["priority"]
             
             merged_features.append(merged_feature)
         else:
@@ -555,14 +566,25 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
             feature_collection = await get_feature_collection()
             for feat in merged_features:
                 feature_data = {
+                    "name": feat["name"],
+                    "useCase": feat["useCase"],
+                    "input": feat["input"],
+                    "output": feat["output"],
+                    "precondition": feat["precondition"],
+                    "postcondition": feat["postcondition"],
+                    "stack": feat["stack"],
+                    "expected_days": feat["expected_days"],
+                    "startDate": feat["startDate"],
+                    "endDate": feat["endDate"],
+                    "difficulty": feat["difficulty"],
+                    "priority": feat["priority"],
                     "projectId": project_data["projectId"],
-                    "feature": feat,
                     "createdAt": datetime.datetime.utcnow()
                 }
                 try:
                     result = await feature_collection.insert_one(feature_data)
-                    feat["featureId"] = str(result.inserted_id)
-                    logger.info(f"{feat['name']} MongoDB 저장 성공 (ID: {feat['featureId']})")
+                    featureId = str(result.inserted_id)
+                    logger.info(f"{feat['name']} MongoDB 저장 성공 (ID: {featureId})")
                 except Exception as e:
                     logger.error(f"{feat['name']} MongoDB 저장 실패: {str(e)}")
                     raise e
