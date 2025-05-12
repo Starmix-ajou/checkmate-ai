@@ -2,7 +2,6 @@
 # mvp 배포 시 제외되어야 하는 파일들 dismiss
 mvp/redis-data.json
 mvp/requirements.in
-mvp/create_epic.py
 
 # 가상 환경 dismiss
 venv/
