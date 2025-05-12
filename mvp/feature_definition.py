@@ -51,7 +51,8 @@ async def create_feature_definition(email: str, description: str, definition_url
     user_input = given_data.get("description")
     
     # 사전 정의된 기능 정의서 존재 여부 확인
-    if(given_data.get("definitionUrl")):
+    predefined_definition = given_data.get("definitionUrl")
+    if predefined_definition:
         logger.info("기능 정의서가 이미 존재합니다.")
         try:
             asset_dir=os.path.join(os.path.dirname(os.path.dirname(__file__)), "asset")
@@ -67,7 +68,8 @@ async def create_feature_definition(email: str, description: str, definition_url
                             await f.write(await response.content.read())
                         
                         async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
-                            predefined_definition = await f.read()
+                            definition_content = await f.read()
+                            logger.info(f"정의서 내용: {definition_content}")
                     else:
                         logger.error(f"기능 정의서 다운로드 실패: {response.status}")
         except Exception as e:
@@ -76,31 +78,41 @@ async def create_feature_definition(email: str, description: str, definition_url
         
         # GPT API 호출을 위한 프롬프트 정의
         create_feature_prompt = """
-        당신의 역할은 주니어 개발팀의 입장에서 개발하려는 서비스에 필요할 것으로 예상되는 기능 목록을 정의하는 것입니다. 
+        당신은 주니어 개발팀의 입장에서 개발하려는 서비스에 필요할 것으로 예상되는 기능 목록을 정의하는 것입니다. 
         각 기능은 구현 가능한 작은 단위여야 하고, 반드시 중복되지 않아야 합니다.
-        다음은 개발팀이 사전에 정의한 정의서가 존재하는 링크입니다. 링크: {predefined_definition}
-        링크의 pdf 파일을 분석해서 이미 정의되어 있는 기능 목록들을 다음의 형식으로 반환해 주세요.
-        이미 정의되어 있는 기능 목록들은 반드시 포함해야 합니다.
+
+        다음은 개발팀이 사전에 정의한 정의서의 내용입니다:
+        {definition_content}
+
+        위 정의서를 자세히 분석하여 다음 사항을 수행해주세요:
+        1. 정의서에 명시된 모든 기능을 추출하여 features 배열에 포함시켜주세요.
+        2. 정의서에 명시된 기능 외에 추가로 필요한 기능을 제안해주세요.
+
+        다음 형식으로 응답해주세요:
         {{
-            "features": 
-            [
-                "로그인 기능",
-                "회원가입 기능",
-                "게시판 기능"
-            ]
-        }}
-        
-        추가로 다음의 형식으로 추가하면 좋을 것으로 예상되는 기능 목록을 제안해 주세요.
-        {{
+            "features": [
+                "정의서에서 추출한 기능1",
+                "정의서에서 추출한 기능2",
+                ...
+            ],
             "suggestions": [
                 {{
                     "question": "이런 기능을 추가하시는 건 어떤가요?",
-                    "answers": ["결제 기능", "주문 기능", "주문 조회 기능"]
+                    "answers": [
+                        "추가 제안 기능1",
+                        "추가 제안 기능2",
+                        ...
+                    ]
                 }}
             ]
         }}
-        
-        정보:
+
+        주의사항:
+        1. 정의서에 명시된 모든 기능을 반드시 포함해주세요.
+        2. 각 기능은 이름만 작성하며 모두 "~기능"으로 끝나야 합니다.
+        3. 기능 간 중복이 없도록 해주세요.
+
+        프로젝트 설명:
         {user_input}
         """
         
@@ -111,11 +123,14 @@ async def create_feature_definition(email: str, description: str, definition_url
             messages=[
                 {
                     "role": "system",
-                    "content": "당신은 소프트웨어 요구사항 분석가입니다."
+                    "content": "당신은 소프트웨어 요구사항 분석가입니다. 정의서를 꼼꼼히 분석하여 모든 기능을 추출하는 것이 당신의 임무입니다."
                 },
                 {
                     "role": "user",
-                    "content": create_feature_prompt.format(user_input=user_input, predefined_definition=predefined_definition)
+                    "content": create_feature_prompt.format(
+                        definition_content=definition_content,
+                        user_input=user_input
+                    )
                 }
             ]
         )
