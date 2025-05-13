@@ -8,6 +8,7 @@ import re
 from typing import Any, Dict, List, Optional, Union
 
 from dotenv import load_dotenv
+from gpt_utils import extract_json_from_gpt_response
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from mongodb_setting import get_feature_collection
@@ -56,23 +57,6 @@ def calculate_priority(expected_days: int, difficulty: int) -> int:
     
     return priority
 
-# 안전하게 #이 문자열 안에 있는 경우는 제거하지 않음
-def remove_comments_safe(content: str) -> str:
-    result = []
-    in_string = False
-    i = 0
-    while i < len(content):
-        char = content[i]
-        if char == '"' and (i == 0 or content[i - 1] != '\\'):
-            in_string = not in_string
-        if char == '#' and not in_string:
-            while i < len(content) and content[i] != '\n':
-                i += 1
-            continue
-        result.append(char)
-        i += 1
-    return ''.join(result)
-
 
 async def create_feature_specification(email: str) -> Dict[str, Any]:
     """
@@ -97,6 +81,9 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     if isinstance(project_data, str):
         project_data = json.loads(project_data)
     
+    if isinstance(feature_data, str):
+        feature_data = json.loads(feature_data)
+    
     # 프로젝트 정보 추출
     projectId = project_data.get("projectId", "")
     project_start_date = project_data.get("startDate", "")
@@ -113,16 +100,8 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
                 stacks=profile.get("stacks", [])
                 # positions 값이 'string'이 아닌 실제 역할(BE/FE)을 사용하도록 수정
                 position = profile.get("positions", [])[0] if profile.get("positions") else ""
-                if position == "string":
-                    # 이전 프로필에서 BE/FE 값을 찾아서 사용
-                    for prev_profile in profiles:
-                        if prev_profile.get("projectId") != projectId and prev_profile.get("positions"):
-                            prev_position = prev_profile.get("positions")[0]
-                            if prev_position in ["Backend", "Frontend"]:
-                                position = prev_position
-                                break
                 member_info = [
-                    name, 
+                    name,
                     position,
                     ", ".join(profile.get("stacks", []))
                 ]
@@ -174,21 +153,31 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     4. 담당자 할당 시 각 멤버의 역할(BE/FE)을 고려해주세요.
     5. 기능 별 startDate와 endDate는 프로젝트 시작일인 {startDate}와 종료일인 {endDate} 사이에 있어야 하며, 그 기간이 expected_days와 일치해야 합니다.
     6. input과 output은 반드시 string으로 반환하세요.
-    각 기능에 대해 다음 항목들을 JSON 형식으로 응답해주세요:
-    {{{{
-        "name": "기능명",
-        "useCase": "기능의 사용 사례 설명",
-        "input": "기능에 필요한 입력 데이터",
-        "output": "기능의 출력 결과",
-        "precondition": "기능 실행 전 만족해야 할 조건",
-        "postcondition": "기능 실행 후 보장되는 조건",
-        "stack": ["필수 스택1", "필수 스택2", ...],
-        "expected_days": 정수,
-        "startDate": "YYYY-MM-DD로 정의되는 기능 시작일",
-        "endDate": "YYYY-MM-DD로 정의되는 기능 종료일",
-        "difficulty": 1-5
-        ...
-    }}}}
+    7. 반드시 아래의 JSON 형식을 정확하게 따라주세요.
+    8. 모든 문자열은 쌍따옴표(")로 감싸주세요.
+    9. 객체의 마지막 항목에는 쉼표를 넣지 마세요.
+    10. 배열의 마지막 항목 뒤에도 쉼표를 넣지 마세요.
+    11. expected_days는 양의 정수여야 합니다.
+    12. difficulty는 1에서 5 사이의 정수여야 합니다.
+    13. startDate와 endDate는 "YYYY-MM-DD" 형식이어야 합니다.
+    14. 각 기능에 대해 다음 항목들을 JSON 형식으로 응답해주세요:
+    {{
+        "features": [
+            {{
+                "name": "기능명",
+                "useCase": "기능의 사용 사례 설명",
+                "input": "기능에 필요한 입력 데이터",
+                "output": "기능의 출력 결과",
+                "precondition": "기능 실행 전 만족해야 할 조건",
+                "postcondition": "기능 실행 후 보장되는 조건",
+                "stack": ["프로젝트에 포함된 스택 중 사용 가능한 스택1", "프로젝트에 포함된 스택 중 사용 가능한 스택2"],
+                "expected_days": 정수,
+                "startDate": "YYYY-MM-DD",
+                "endDate": "YYYY-MM-DD",
+                "difficulty": 1
+            }}
+        ]
+    }}
     """)
     
     # 프롬프트에 데이터 전달
@@ -207,54 +196,68 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     # 응답 파싱
     try:
         content = response.content
-        logger.info("\n=== GPT 원본 응답 ===")
-        logger.info(content)
-        logger.info("=== 응답 끝 ===\n")
+        #logger.info("\n=== GPT 원본 응답 ===")
+        #logger.info(content)
+        #logger.info("=== 응답 끝 ===\n")
         
-        # JSON 블록 추출
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
-        else:
-            # JSON 블록이 없는 경우 전체 내용에서 첫 번째 { 부터 마지막 } 까지 추출
-            start = content.find("{")
-            end = content.rfind("}") + 1
-            if start != -1 and end != 0:
-                content = content[start:end]
-        
-        # 줄바꿈과 불필요한 공백 제거
-        content = content.replace("\n", "").replace("  ", " ").strip()
-        
-        # 주석 제거 (# 이후의 텍스트 제거)
-        content = remove_comments_safe(content)
-        
-        logger.info("\n=== 정리된 JSON 문자열 ===")
-        logger.info(content)
-        logger.info("=== JSON 문자열 끝 ===\n")
-        
-        # JSON 파싱 시도
         try:
-            result = json.loads(content)
-            logger.info("\n=== 파싱된 결과 ===")
-            logger.info(json.dumps(result, indent=2, ensure_ascii=False))
-            logger.info("=== 결과 끝 ===\n")
-        except json.JSONDecodeError as e:
-            # JSON 파싱 실패 시 문자열 내용 분석
-            logger.error("\n=== JSON 파싱 실패 분석 ===")
-            logger.error(f"파싱 실패 위치: {e.pos}")
-            logger.error(f"문제의 문자: {content[e.pos-10:e.pos+10]}")  # 문제 지점 주변 문자열 출력
-            logger.error(f"전체 에러: {str(e)}")
-            logger.error("=== 분석 끝 ===\n")
-            raise Exception(f"JSON 파싱 실패: {str(e)}") from e
+            gpt_result = extract_json_from_gpt_response(content)
+        except Exception as e:
+            logger.error(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True)
+            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True) from e
+        # JSON 블록 추출
+        # if "```json" in content:
+        #     content = content.split("```json")[1].split("```")[0].strip()
+        # elif "```" in content:
+        #     content = content.split("```")[1].split("```")[0].strip()
+        # else:
+        #     # JSON 블록이 없는 경우 전체 내용에서 첫 번째 { 부터 마지막 } 까지 추출
+        #     start = content.find("{")
+        #     end = content.rfind("}") + 1
+        #     if start != -1 and end != 0:
+        #         content = content[start:end]
         
+        # # 줄바꿈과 불필요한 공백 제거
+        # content = content.replace("\n", "").replace("  ", " ").strip()
         
-        logger.debug(f"응답 파싱 후 result 타입: {type(result)}, 내용: {repr(result)[:500]}")   # 현재 List 반환 중
+        # # 주석 제거 (# 이후의 텍스트 제거)
+        # content = remove_comments_safe(content)
+        
+        # logger.info("\n=== 정리된 JSON 문자열 ===")
+        # logger.info(content)
+        # logger.info("=== JSON 문자열 끝 ===\n")
+        
+        # # JSON 파싱 시도
+        # try:
+        #     result = json.loads(content)
+        #     logger.info("\n=== 파싱된 결과 ===")
+        #     logger.info(json.dumps(result, indent=2, ensure_ascii=False))
+        #     logger.info("=== 결과 끝 ===\n")
+        # except json.JSONDecodeError as e:
+        #     # JSON 파싱 실패 시 문자열 내용 분석
+        #     logger.error("\n=== JSON 파싱 실패 분석 ===")
+        #     logger.error(f"파싱 실패 위치: {e.pos}")
+        #     logger.error(f"문제의 문자: {content[e.pos-10:e.pos+10]}")  # 문제 지점 주변 문자열 출력
+        #     logger.error(f"전체 에러: {str(e)}")
+        #     logger.error("=== 분석 끝 ===\n")
+        #     raise Exception(f"JSON 파싱 실패: {str(e)}") from e
+        
+        logger.debug(f"📌 응답 파싱 후 gpt_result 타입: {type(gpt_result)}, 내용: {repr(gpt_result)[:500]}")   # 현재 List 반환 중
+        try:
+            if isinstance(gpt_result, dict) and "features" in gpt_result:
+                feature_list = gpt_result["features"]
+            elif isinstance(gpt_result, list):
+                feature_list = gpt_result
+            else:
+                raise ValueError("GPT 응답이 유효한 features 리스트를 포함하지 않습니다.")
+        except Exception as e:
+            logger.error(f"GPT 응답 파싱 중 오류 발생: {str(e)}", exc_info=True)
+            raise Exception(f"GPT 응답 파싱 중 오류 발생: {str(e)}", exc_info=True) from e
+        
         features_to_store = []
-        for data in result:
-            feature_name = data["name"]
+        for data in feature_list:
             feature = {
-                "name": feature_name,
+                "name": data["name"],
                 "useCase": data["useCase"],
                 "input": data["input"],
                 "output": data["output"],
@@ -278,11 +281,11 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         try:
             await save_to_redis(f"features:{email}", feature_data)
         except Exception as e:
-            logger.error(f"feature_specification 초안 Redis 저장 실패: {str(e)}")
+            logger.error(f"feature_specification 초안 Redis 저장 실패: {str(e)}", exc_info=True)
             raise e
         
         # API 응답 반환
-        result = {
+        response = {
             "features": [
                 {
                     "name": data["name"],
@@ -290,18 +293,15 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
                     "input": data["input"],
                     "output": data["output"]
                 }
-                for data in result
+                for data in feature_list
             ]
         }
-        
-        print(result)
-        
-        
-        return result
+        logger.info(f"👉 API 응답 결과: {response}")
+        return response
+    
     except Exception as e:
-        logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}")
-        raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}") from e
-
+        logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True)
+        raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True) from e
 
 
 async def update_feature_specification(email: str, feedback: str) -> Dict[str, Any]:
@@ -363,7 +363,7 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
                 "output": "출력 결과",
                 "precondition": "기능 실행 전 만족해야 할 조건",
                 "postcondition": "기능 실행 후 보장되는 조건",
-                "stack": ["필수 스택1", "필수 스택2"],
+                "stack": ["스택1", "스택2"],
                 "expected_days": 정수,
                 "startDate": "YYYY-MM-DD로 정의되는 기능 시작일",
                 "endDate": "YYYY-MM-DD로 정의되는 기능 종료일"
@@ -376,7 +376,7 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
     주의사항:
     0. 반드시 모든 내용을 한국어로 작성해주세요. 만약 한국어로 대체하기 어려운 단어가 있다면 영어를 사용해 주세요.
     1. 반드시 위 JSON 형식을 정확하게 따라주세요.
-    2. 모든 문자열은 쌍따옴표로 감싸주세요.
+    2. 모든 문자열은 쌍따옴표(")로 감싸주세요.
     3. 객체의 마지막 항목에는 쉼표를 넣지 마세요.
     4. 수정된 기능만 포함하고, 수정되지 않은 기능은 제외해주세요.
     5. isNextStep은 사용자의 피드백이 종료 요청인 경우 1, 수정/삭제 요청인 경우 0으로 설정해주세요.
@@ -405,79 +405,88 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
     # 응답 파싱
     try:
         content = response.content
-        logger.info("\n=== GPT 원본 응답 ===")
-        logger.info(content)
-        logger.info("=== 응답 끝 ===\n")
+        #logger.info("\n=== GPT 원본 응답 ===")
+        #logger.info(content)
+        #logger.info("=== 응답 끝 ===\n")
         
+        try: 
+            gpt_result = extract_json_from_gpt_response(content)
+        except Exception as e:
+            logger.error(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True)
+            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True) from e
         # JSON 블록 추출 전 content 정리
-        content = content.strip()
+        #content = content.strip()
         
         # JSON 블록 추출
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
+        # if "```json" in content:
+        #     content = content.split("```json")[1].split("```")[0].strip()
+        # elif "```" in content:
+        #     content = content.split("```")[1].split("```")[0].strip()
         
-        # 줄바꿈과 불필요한 공백 제거
-        content = content.replace("\n", " ").replace("\r", " ")
-        while "  " in content:
-            content = content.replace("  ", " ")
-        content = content.strip()
+        # # 줄바꿈과 불필요한 공백 제거
+        # content = content.replace("\n", " ").replace("\r", " ")
+        # while "  " in content:
+        #     content = content.replace("  ", " ")
+        # content = content.strip()
         
-        # 주석 제거
-        content_parts = []
-        in_string = False
-        comment_start = -1
+        # # 주석 제거
+        # content_parts = []
+        # in_string = False
+        # comment_start = -1
         
-        for i, char in enumerate(content):
-            if char == '"' and (i == 0 or content[i-1] != '\\'):
-                in_string = not in_string
-            elif char == '#' and not in_string:
-                if comment_start == -1:
-                    comment_start = i
-            elif char in '{[,' and comment_start != -1:
-                content_parts.append(content[comment_start:i].strip())
-                comment_start = -1
+        # for i, char in enumerate(content):
+        #     if char == '"' and (i == 0 or content[i-1] != '\\'):
+        #         in_string = not in_string
+        #     elif char == '#' and not in_string:
+        #         if comment_start == -1:
+        #             comment_start = i
+        #     elif char in '{[,' and comment_start != -1:
+        #         content_parts.append(content[comment_start:i].strip())
+        #         comment_start = -1
         
-        if comment_start != -1:
-            content_parts.append(content[comment_start:].strip())
+        # if comment_start != -1:
+        #     content_parts.append(content[comment_start:].strip())
         
-        for part in content_parts:
-            content = content.replace(part, '')
+        # for part in content_parts:
+        #     content = content.replace(part, '')
         
-        logger.info("\n=== 정리된 JSON 문자열 ===")
-        logger.info(content)
-        logger.info("=== JSON 문자열 끝 ===\n")
+        # logger.info("\n=== 정리된 JSON 문자열 ===")
+        # logger.info(content)
+        # logger.info("=== JSON 문자열 끝 ===\n")
         
         # JSON 파싱
-        try:
-            result = json.loads(content)
-        except json.JSONDecodeError as e:
-            logger.error("\n=== JSON 파싱 실패 분석 ===")
-            logger.error(f"파싱 실패 위치: {e.pos}")
-            logger.error(f"문제의 문자: {content[max(0, e.pos-20):min(len(content), e.pos+20)]}")
-            logger.error(f"전체 에러: {str(e)}")
-            logger.error("=== 분석 끝 ===\n")
-            raise
+        #try:
+            #result = json.loads(content)
+        #except json.JSONDecodeError as e:
+        #    logger.error("\n=== JSON 파싱 실패 분석 ===")
+        #    logger.error(f"파싱 실패 위치: {e.pos}")
+        #    logger.error(f"문제의 문자: {content[max(0, e.pos-20):min(len(content), e.pos+20)]}")
+        #    logger.error(f"전체 에러: {str(e)}")
+        #    logger.error("=== 분석 끝 ===\n")
+        #    raise
 
         # 응답 검증
-        if not isinstance(result, dict):
-            raise ValueError("응답이 객체 형식이 아닙니다.")
+        if isinstance(gpt_result, dict) and "features" in gpt_result:
+            feature_list = gpt_result["features"]
+        elif isinstance(gpt_result, list):
+            feature_list = gpt_result
+        else:
+            raise ValueError("GPT 응답이 유효한 features 리스트를 포함하지 않습니다.")
         
-        if "isNextStep" not in result:
+        if "isNextStep" not in gpt_result:
             raise ValueError("isNextStep 필드가 누락되었습니다.")
         
-        if not isinstance(result["isNextStep"], int) or result["isNextStep"] not in [0, 1]:
+        if not isinstance(gpt_result["isNextStep"], int) or gpt_result["isNextStep"] not in [0, 1]:
             raise ValueError("isNextStep은 0 또는 1이어야 합니다.")
         
-        if "features" not in result:
+        if "features" not in gpt_result:
             raise ValueError("features 필드가 누락되었습니다.")
         
-        if not isinstance(result["features"], list):
+        if not isinstance(gpt_result["features"], list):
             raise ValueError("features는 배열이어야 합니다.")
         
         # 각 기능 검증
-        for feature in result["features"]:
+        for feature in feature_list:
             required_fields = [
                 "name", "useCase", "input", "output", "precondition", "postcondition",
                 "stack", "expected_days", "startDate", "endDate", "difficulty"
@@ -497,18 +506,13 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
             
             if not feature["startDate"] >= startDate or not feature["endDate"] <= endDate:
                 raise ValueError(f"기능 '{feature['name']}'의 startDate와 endDate는 프로젝트 시작일인 {startDate}와 종료일인 {endDate} 사이에 있어야 합니다.")
-            
-
-        logger.info("\n=== 검증된 결과 ===")
-        logger.info(json.dumps(result, indent=2, ensure_ascii=False))
-        logger.info("=== 결과 끝 ===\n")
         
     except Exception as e:
-        logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}")
-        raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}") from e
+        logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True)
+        raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True) from e
     
     # 업데이트된 기능 정보를 기존 기능 리스트와 융합
-    updated_map = {feature["name"]: feature for feature in result["features"]}
+    updated_map = {feature["name"]: feature for feature in feature_list}
     merged_features = []
     
     # 기존 기능 리스트 순회
@@ -561,11 +565,11 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
     try:
         await save_to_redis(f"feature:{email}", merged_features)
     except Exception as e:
-        logger.error(f"업데이트된 feature_specification Redis 저장 실패: {str(e)}")
+        logger.error(f"업데이트된 feature_specification Redis 저장 실패: {str(e)}", exc_info=True)
         raise e
     
     # 다음 단게로 넘어가는 경우, MongoDB에 Redis의 데이터를 옮겨서 저장
-    if result["isNextStep"] == 1:
+    if gpt_result["isNextStep"] == 1:
         try:
             feature_collection = await get_feature_collection()
             for feat in merged_features:
@@ -586,19 +590,19 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
                     "createdAt": datetime.datetime.utcnow()
                 }
                 try:
-                    result = await feature_collection.insert_one(feature_data)
-                    featureId = str(result.inserted_id)
+                    insert_result = await feature_collection.insert_one(feature_data)
+                    featureId = str(insert_result.inserted_id)
                     logger.info(f"{feat['name']} MongoDB 저장 성공 (ID: {featureId})")
                 except Exception as e:
-                    logger.error(f"{feat['name']} MongoDB 저장 실패: {str(e)}")
+                    logger.error(f"{feat['name']} MongoDB 저장 실패: {str(e)}", exc_info=True)
                     raise e
             logger.info("모든 feature MongoDB 저장 완료")
         except Exception as e:
-            logger.error(f"feature_specification MongoDB 저장 실패: {str(e)}")
+            logger.error(f"feature_specification MongoDB 저장 실패: {str(e)}", exc_info=True)
             raise e
     
     # API 응답 반환
-    return {
+    response = {
         "features": [
             {
                 "name": feature["name"],
@@ -608,5 +612,7 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
             }
             for feature in merged_features
         ],
-        "isNextStep": result["isNextStep"]
+        "isNextStep": gpt_result["isNextStep"]
     }
+    logger.info(f"👉 API 응답 결과: {response}")
+    return response

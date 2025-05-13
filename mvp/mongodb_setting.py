@@ -31,16 +31,20 @@ async def test_mongodb_connection():
         raise e
     
 async def get_feature_collection():
-    print("get_feature_collection 호출")
+    print("⚙️ get_feature_collection 호출")
     return db['features']
 
 async def get_epic_collection():
-    print("get_epic_collection 호출")
+    print("⚙️ get_epic_collection 호출")
     return db['epics']
 
 async def get_task_collection():
-    print("get_task_collection 호출")
+    print("⚙️ get_task_collection 호출")
     return db['tasks']
+
+async def get_project_collection():
+    print("⚙️ get_project_collection 호출")
+    return db['projects']
 
 if __name__ == "__main__":
     print(MONGODB_URI)
