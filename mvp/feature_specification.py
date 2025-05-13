@@ -94,6 +94,9 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         logger.error(f"🚨 email이 일치하는 Project 정보 JSON 로드 중 오류 발생: {str(e)}")
         raise Exception(f"🚨 email이 일치하는 Project 정보 JSON 로드 중 오류 발생: {str(e)}") from e
     
+    if isinstance(feature_data, str):
+        feature_data = json.loads(feature_data)
+    
     # 프로젝트 정보 추출
     try:
         projectId = project_data.get("projectId", "")
