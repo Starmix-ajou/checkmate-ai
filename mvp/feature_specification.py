@@ -586,8 +586,8 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
                     "createdAt": datetime.datetime.utcnow()
                 }
                 try:
-                    result = await feature_collection.insert_one(feature_data)
-                    featureId = str(result.inserted_id)
+                    insert_result = await feature_collection.insert_one(feature_data)
+                    featureId = str(insert_result.inserted_id)
                     logger.info(f"{feat['name']} MongoDB 저장 성공 (ID: {featureId})")
                 except Exception as e:
                     logger.error(f"{feat['name']} MongoDB 저장 실패: {str(e)}")
