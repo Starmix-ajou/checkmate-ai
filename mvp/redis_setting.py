@@ -43,9 +43,9 @@ async def save_to_redis(key: str, data: Any):
             data = data
             
         await redis_client.set(key, data)
-        logger.info(f"Redis에 데이터 저장 성공: {key}")
+        logger.info(f"✅ Redis에 데이터 저장 성공: {key}")
     except Exception as e:
-        raise Exception(f"Redis 저장 중 오류 발생: {str(e)}") from e
+        raise Exception(f"❌ Redis 저장 중 오류 발생: {str(e)}") from e
 
 async def load_from_redis(key: str) -> Any:
     try:
@@ -58,7 +58,7 @@ async def load_from_redis(key: str) -> Any:
                 return data
         return None
     except Exception as e:
-        raise Exception(f"Redis 로드 중 오류 발생: {str(e)}") from e
+        raise Exception(f"❌ Redis 로드 중 오류 발생: {str(e)}") from e
 
 if __name__ == "__main__":
     print(REDIS_HOST)

@@ -8,6 +8,7 @@ import aiofiles
 import aiohttp
 import httpx
 from dotenv import load_dotenv
+from gpt_utils import extract_json_from_gpt_response
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from openai import AsyncOpenAI
@@ -174,23 +175,34 @@ async def create_feature_definition(email: str, description: str, definition_url
     # GPT 응답에서 features 추출
     try:
         content = completion.choices[0].message.content
-        logger.info(f"GPT API 원본 응답: {content}")
+        
+        try:
+            feature_names = extract_json_from_gpt_response(content)
+        except Exception as e:
+            logger.error(f"GPT util 사용 중 오류 발생: {str(e)}")
+            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}") from e
+        
+        #logger.info(f"GPT API 원본 응답: {content}")
         
         # JSON 형식 정리
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
+        # if "```json" in content:
+        #     content = content.split("```json")[1].split("```")[0].strip()
+        # elif "```" in content:
+        #     content = content.split("```")[1].split("```")[0].strip()
         
-        logger.info(f"정리된 JSON 문자열: {content}")
-        feature_names = json.loads(content)
-        logger.info(f"파싱된 features: {feature_names}")
+        #logger.info(f"정리된 JSON 문자열: {content}")
+        #feature_names = json.loads(content)
+        #logger.info(f"파싱된 features: {feature_names}")
     
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON 파싱 오류: {str(e)}")
-        logger.error(f"파싱 실패한 내용: {content}")
-        raise Exception(f"GPT API 응답 파싱 중 오류 발생: {str(e)}") from e
+    #except json.JSONDecodeError as e:
+        # logger.error(f"JSON 파싱 오류: {str(e)}")
+        # logger.error(f"파싱 실패한 내용: {content}")
+        # raise Exception(f"GPT API 응답 파싱 중 오류 발생: {str(e)}") from e
     
+    #except Exception as e:
+        # logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}")
+        # raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}") from e
+        
     except Exception as e:
         logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}")
         raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}") from e
@@ -206,7 +218,7 @@ async def create_feature_definition(email: str, description: str, definition_url
             "suggestions": suggestions
         }
     }
-    logger.info(f"최종 반환 결과: {result}")
+    logger.info(f"👉 API 응답 결과: {result}")
     
     # Redis에 저장할 데이터 구성 (features와 suggestions의 answers만 포함)
     all_features = features + [answer for suggestion in suggestions for answer in suggestion["answers"]]
@@ -325,37 +337,37 @@ async def update_feature_definition(email: str, feedback: str) -> Dict[str, Any]
     
     # 응답 파싱
     content = update_response.choices[0].message.content
-    logger.info(f"GPT API 원본 응답: {content}")
+    #logger.info(f"GPT API 원본 응답: {content}")
     
     try:
+        try:
+            updated_features = extract_json_from_gpt_response(content)
+        except Exception as e:
+            logger.error(f"GPT util 사용 중 오류 발생: {str(e)}")
+            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}") from e
         # 응답에서 JSON 부분만 추출
-        content = content.strip()
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
+        #content = content.strip()
+        # if "```json" in content:
+        #     content = content.split("```json")[1].split("```")[0].strip()
+        # elif "```" in content:
+        #     content = content.split("```")[1].split("```")[0].strip()
         
         # 줄바꿈과 불필요한 공백 제거
-        content = content.replace("\n", "").replace("  ", " ").strip()
-        logger.info(f"정리된 JSON 문자열: {content}")
+        #content = content.replace("\n", "").replace("  ", " ").strip()
+        #logger.info(f"정리된 JSON 문자열: {content}")
         
-        updated_features = json.loads(content)
-        logger.info(f"파싱된 features: {updated_features}")
+        # updated_features = json.loads(content)
+        # logger.info(f"파싱된 features: {updated_features}")
         
         if not isinstance(updated_features, dict) or "features" not in updated_features:
             raise ValueError("응답이 올바른 형식이 아닙니다. 'features' 키가 필요합니다.")
         
         if not isinstance(updated_features["features"], list):
             raise ValueError("'features'는 리스트 형식이어야 합니다.")
-            
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON 파싱 오류: {str(e)}")
-        logger.error(f"파싱 실패한 내용: {content}")
-        raise Exception(f"GPT API 응답 파싱 중 오류 발생: {str(e)}") from e
     except Exception as e:
         logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}")
         raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}") from e
-    
+        
     # Redis 업데이트
     # 업데이트 전 데이터 로깅
     logger.info(f"업데이트 전 Redis 데이터: {feature_data}")
@@ -364,7 +376,7 @@ async def update_feature_definition(email: str, feedback: str) -> Dict[str, Any]
     feature_data["features"] = updated_features["features"]
     
     # 업데이트할 데이터 로깅
-    logger.info(f"업데이트할 Redis 데이터: {feature_data}")
+    logger.info(f"업데이트 후 Redis 데이터: {feature_data}")
     
     # Redis 업데이트
     redis_data = {
@@ -374,20 +386,17 @@ async def update_feature_definition(email: str, feedback: str) -> Dict[str, Any]
     # Redis에 저장
     try:
         await save_to_redis(f"features:{email}", redis_data)
-        logger.info(f"Redis에 데이터 저장 완료: {redis_data}")
+        #logger.info(f"Redis에 데이터 저장 완료: {redis_data}")
     except Exception as e:
-        logger.error(f"Redis 저장 중 오류 발생: {str(e)}")
+        #logger.error(f"Redis 저장 중 오류 발생: {str(e)}")
         raise Exception(f"Redis 저장 중 오류 발생: {str(e)}") from e
-    
-    # 업데이트 확인
-    updated_data = await load_from_redis(f"features:{email}")
-    logger.info(f"업데이트 후 Redis 데이터: {updated_data}")
     
     # API 응답용 결과 반환
     result = {
         "features": updated_features["features"],
         "isNextStep": 0
     }
+    logger.info(f"👉 API 응답 결과: {result}")
     
     return result
     
