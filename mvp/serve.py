@@ -18,7 +18,8 @@ from redis_setting import test_redis_connection
 # 로깅 설정
 logging.basicConfig(
     level=logging.INFO,
-    format='%(name)s - %(message)s'
+    format='%(name)s - %(message)s', 
+    #filename='mvp.log'
 )
 logger = logging.getLogger(__name__)
 
@@ -29,14 +30,17 @@ class FeatureDefinitionPOSTRequest(BaseModel):
     
 class FeatureDefinitionPUTRequest(BaseModel):
     email: str
-    feedback: Optional[str] = None
+    feedback: str
     
 class FeatureSpecificationPOSTRequest(BaseModel):
     email: str
 
 class FeatureSpecificationPUTRequest(BaseModel):
     email: str
-    feedback: str
+    feedback: Optional[str] = None
+    createdFeatures: Optional[List[Dict[str, Any]]] = None
+    modifiedFeatures: Optional[List[Dict[str, Any]]] = None
+    deletedFeatures: Optional[List[str]] = None
     
 class EpicPOSTRequest(BaseModel):
     projectId: str
@@ -76,7 +80,7 @@ async def post_definition(request: FeatureDefinitionPOSTRequest):
         logger.info(f"✅ 처리 결과: {result}")
         return result
     except Exception as e:
-        logger.error(f"🔥 예외 발생: {str(e)}")
+        logger.error(f"🔥 예외 발생: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"기능 정의서 생성 중 오류 발생: {str(e)}"
@@ -90,7 +94,7 @@ async def put_definition(request: FeatureDefinitionPUTRequest):
         logger.info(f"✅ 처리 결과: {result}")
         return result
     except Exception as e:
-        logger.error(f"🔥 예외 발생: {str(e)}")
+        logger.error(f"🔥 예외 발생: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"기능 정의서 업데이트 중 오류 발생: {str(e)}"
@@ -104,7 +108,7 @@ async def post_specification(request: FeatureSpecificationPOSTRequest):
         logger.info(f"✅ 처리 결과: {result}")
         return result
     except Exception as e:
-        logger.error(f"🔥 예외 발생: {str(e)}")
+        logger.error(f"🔥 예외 발생: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"기능 명세서 생성 중 오류 발생: {str(e)}"
@@ -114,11 +118,11 @@ async def post_specification(request: FeatureSpecificationPOSTRequest):
 async def put_specification(request: FeatureSpecificationPUTRequest):
     try:
         logger.info(f"📨 PUT /specification 요청 수신: {request}")
-        result = await update_feature_specification(request.email, request.feedback)
+        result = await update_feature_specification(request.email, request.feedback, request.createdFeatures, request.modifiedFeatures, request.deletedFeatures)
         logger.info(f"✅ 처리 결과: {result}")
         return result
     except Exception as e:
-        logger.error(f"🔥 예외 발생: {str(e)}")
+        logger.error(f"🔥 예외 발생: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"기능 명세서 업데이트 중 오류 발생: {str(e)}"
