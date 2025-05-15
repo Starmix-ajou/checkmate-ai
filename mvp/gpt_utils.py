@@ -1,11 +1,11 @@
 import json
 import logging
-from typing import Any, Union
+from typing import Any, Dict, List, Union
 
 logger = logging.getLogger(__name__)
 
 
-def extract_json_from_gpt_response(content: str) -> Union[dict, list]:
+def extract_json_from_gpt_response(content: str) -> List[Dict[str, Any]]:
     """
     GPT 응답에서 JSON 블록만 추출하고 파싱합니다.
 
@@ -13,7 +13,7 @@ def extract_json_from_gpt_response(content: str) -> Union[dict, list]:
         content (str): GPT 모델이 반환한 전체 텍스트 응답
 
     Returns:
-        Union[dict, list]: 파싱된 JSON 객체 (딕셔너리 또는 리스트)
+        List[Dict[str, Any]]: GPT의 응답을 최종적으로는 리스트로 반환합니다. 내부에 필드 구분을 위한 딕셔너리 구조가 있을 수 있습니다.
 
     Raises:
         ValueError: 유효한 JSON이 아닌 경우
@@ -41,22 +41,22 @@ def extract_json_from_gpt_response(content: str) -> Union[dict, list]:
         content = content.replace("  ", " ")
     content = content.strip()
     
-    # 4. 안전하게 #이 문자열 안에 있는 경우는 제거하지 않음
-    #content = remove_comments_safe(content)
+    # 4. 주석 처리된 부분을 제거하고, 안전하게 #이 문자열 안에 있는 경우는 제거하지 않음
+    content = remove_comments_safe(content)
 
     logger.info(f"🔍 정리된 JSON 문자열: {content}")
 
     # 4. 파싱 시도
     try:
         parsed = json.loads(content)
-        logger.info("✅ JSON 파싱 성공")
-        return parsed
+        logger.info("✅ JSON 파싱 완료")
     except json.JSONDecodeError as e:
         error_pos = int(e.pos) if isinstance(e.pos, str) else e.pos
         error_context = content[max(0, error_pos-10):min(len(content), error_pos+10)]
         logger.error(f"❌ JSON 파싱 실패: 위치 {error_pos}, 문제 문자 주변: {error_context}")
         raise ValueError(f"GPT 응답 파싱 중 오류 발생: {str(e)}")
-
+    
+    return parsed
 
 # 안전하게 #이 문자열 안에 있는 경우는 제거하지 않음
 def remove_comments_safe(content: str) -> str:
