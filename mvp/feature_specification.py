@@ -307,7 +307,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         try:
             await save_to_redis(f"features:{email}", features_to_store)
         except Exception as e:
-            logger.error(f"feature_specification 초안 Redis 저장 실패: {str(e)}")
+            logger.error(f"feature_specification 초안 Redis 저장 실패: {str(e)}", exc_info=True)
             raise e
         
         # API 응답 반환
@@ -327,8 +327,8 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         return response
     
     except Exception as e:
-        logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}")
-        raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}") from e
+        logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True)
+        raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True) from e
 
 
 ### ======== Update Feature Specification ======== ###
@@ -551,8 +551,8 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
                 raise ValueError(f"기능 '{feature['name']}'의 startDate와 endDate는 프로젝트 시작일인 {project_start_date}와 종료일인 {project_end_date} 사이에 있어야 합니다.")
         
     except Exception as e:
-        logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}")
-        raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}") from e
+        logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True)
+        raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True) from e
     
 #     # 업데이트된 기능 정보를 기존 기능 리스트와 융합
 #     updated_map = {feature["name"]: feature for feature in feature_list}
@@ -623,7 +623,7 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
     try:
         await save_to_redis(f"features:{email}", merged_features)
     except Exception as e:
-        logger.error(f"업데이트된 feature_specification Redis 저장 실패: {str(e)}")
+        logger.error(f"업데이트된 feature_specification Redis 저장 실패: {str(e)}", exc_info=True)
         raise e
     
     # 다음 단게로 넘어가는 경우, MongoDB에 Redis의 데이터를 옮겨서 저장
@@ -652,11 +652,11 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
                     await feature_collection.insert_one(feature_data)
                     logger.info(f"{feat['name']} MongoDB 저장 성공 (ID: {feat['_id']})")
                 except Exception as e:
-                    logger.error(f"{feat['name']} MongoDB 저장 실패: {str(e)}")
+                    logger.error(f"{feat['name']} MongoDB 저장 실패: {str(e)}", exc_info=True)
                     raise e
             logger.info("모든 feature MongoDB 저장 완료")
         except Exception as e:
-            logger.error(f"feature_specification MongoDB 저장 실패: {str(e)}")
+            logger.error(f"feature_specification MongoDB 저장 실패: {str(e)}", exc_info=True)
             raise e
     
     # API 응답 반환
