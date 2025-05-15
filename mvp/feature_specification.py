@@ -5,6 +5,7 @@ import logging
 import math
 import os
 import re
+import uuid
 from typing import Any, Dict, List, Optional, Union
 
 from dotenv import load_dotenv
@@ -22,10 +23,24 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-API_ENDPOINT = "http://localhost:8000/project/specification"
-
-project_members=[]
 feature_collection = get_feature_collection()
+
+def assign_featureId(feature: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    기능 목록에 기능 ID를 할당합니다.
+    
+    Args:
+        feature_data (List[Dict[str, Any]]): 기능 목록
+        
+    Returns:
+        Dict[str, Any]: 기능 ID가 할당된 기능
+    """
+    # UUID4를 생성하고 문자열로 변환
+    feature["_id"] = str(uuid.uuid4())
+    
+    print(f"ID 부여 결과: {feature}에 _id: {feature['_id']} 부여 완료")
+    return feature
+
 
 def calculate_priority(expected_days: int, difficulty: int) -> int:
     """
@@ -58,17 +73,9 @@ def calculate_priority(expected_days: int, difficulty: int) -> int:
     return priority
 
 
+### ======== Create Feature Specification ======== ###
 async def create_feature_specification(email: str) -> Dict[str, Any]:
-    """
-    Redis에서 프로젝트 정보를 조회하고 기능 명세서를 생성합니다.
-    
-    Args:
-        email (str): 사용자 이메일
-        
-    Returns:
-        Dict[str, Any]: 기능 명세서 데이터
-    """
-    # 변수 초기화
+    # /project/specification에서 참조하는 변수 초기화
     stacks=[]
     project_members=[]
     
@@ -77,50 +84,105 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     feature_data = await load_from_redis(f"features:{email}")
     if not project_data:
         raise ValueError(f"Project for user {email} not found")
+    if not feature_data:
+        raise ValueError(f"Feature for user {email} not found")
 
-    if isinstance(project_data, str):
-        project_data = json.loads(project_data)
-    
-    if isinstance(feature_data, str):
-        feature_data = json.loads(feature_data)
+    try:
+        if isinstance(project_data, str):
+            project_data = json.loads(project_data)
+    except Exception as e:
+        logger.error(f"🚨 email이 일치하는 Project 정보 JSON 로드 중 오류 발생: {str(e)}")
+        raise Exception(f"🚨 email이 일치하는 Project 정보 JSON 로드 중 오류 발생: {str(e)}") from e
     
     # 프로젝트 정보 추출
-    projectId = project_data.get("projectId", "")
-    project_start_date = project_data.get("startDate", "")
-    project_end_date = project_data.get("endDate", "")
+    try:
+        projectId = project_data.get("projectId", "")
+    except Exception as e:
+        logger.error(f"projectId 접근 중 오류 발생: {str(e)}")
+        raise
+
+    try:
+        project_start_date = project_data.get("startDate", "")
+    except Exception as e:
+        logger.error(f"project_start_date 접근 중 오류 발생: {str(e)}")
+        raise
+
+    try:
+        project_end_date = project_data.get("endDate", "")
+    except Exception as e:
+        logger.error(f"project_end_date 접근 중 오류 발생: {str(e)}")
+        raise
+
     print(f"프로젝트 아이디: {projectId}")
-    for member in project_data.get("members", []):
-        name = member.get("name")
+    
+    try:
+        members = project_data.get("members", [])
+    except Exception as e:
+        logger.error(f"members 접근 중 오류 발생: {str(e)}")
+        raise
+
+    for member in members:
+        try:
+            name = member.get("name")
+        except Exception as e:
+            logger.error(f"member name 접근 중 오류 발생: {str(e)}")
+            continue
+
         print(f"멤버 이름: {name}")
-        profiles = member.get("profiles", [])
+        
+        try:
+            profiles = member.get("profiles", [])
+        except Exception as e:
+            logger.error(f"member profiles 접근 중 오류 발생: {str(e)}")
+            continue
+
         print(f"멤버 프로필: {profiles}")
+        
         for profile in profiles:
-            if profile.get("projectId") == projectId:
+            try:
+                profile_project_id = profile.get("projectId")
+            except Exception as e:
+                logger.error(f"profile projectId 접근 중 오류 발생: {str(e)}")
+                continue
+
+            if profile_project_id == projectId:
                 print(f"프로젝트 아이디 일치: {projectId}")
-                stacks=profile.get("stacks", [])
-                # positions 값이 'string'이 아닌 실제 역할(BE/FE)을 사용하도록 수정
-                position = profile.get("positions", [])[0] if profile.get("positions") else ""
-                member_info = [
-                    name,
-                    position,
-                    ", ".join(profile.get("stacks", []))
-                ]
-                project_members.append(", ".join(str(item) for item in member_info))
-    features = feature_data.get("features", [])
-    print(f"프로젝트 멤버: {project_members}")
+                
+                try:
+                    stacks = profile.get("stacks", [])
+                except Exception as e:
+                    logger.error(f"profile stacks 접근 중 오류 발생: {str(e)}")
+                    continue
+
+                try:
+                    positions = profile.get("positions", [])
+                    position = positions[0] if positions else ""
+                except Exception as e:
+                    logger.error(f"profile positions 접근 중 오류 발생: {str(e)}")
+                    continue
+
+                try:
+                    member_info = [
+                        name,
+                        position,
+                        ", ".join(profile.get("stacks", []))
+                    ]
+                    project_members.append(", ".join(str(item) for item in member_info))
+                except Exception as e:
+                    logger.error(f"member_info 생성 중 오류 발생: {str(e)}")
+                    continue
+
+    try:
+        if isinstance(feature_data, str):
+            feature_data = json.loads(feature_data)
+    except Exception as e:
+        logger.error(f"🚨 features 접근 중 오류 발생: {str(e)}")
+        raise Exception(f"🚨 features 접근 중 오류 발생: {str(e)}") from e
     
-    # 필수 데이터 검증
-    if not stacks:
-        raise ValueError("프로젝트 기술 스택 정보가 없습니다.")
-    if not project_members:
-        raise ValueError("프로젝트 멤버 정보가 없습니다.")
-    if not features:
-        raise ValueError("프로젝트 기능 목록이 없습니다.")
-    
-    print("\n=== 프로젝트 정보 ===")
+    print("\n=== 불러온 프로젝트 정보 ===")
     print("스택:", stacks)
     print("멤버:", project_members)
-    print("기능 목록:", features)
+    print("기능 목록:", feature_data)
     print("시작일:", project_start_date)
     print("종료일:", project_end_date)
     print("=== 프로젝트 정보 끝 ===\n")
@@ -139,7 +201,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     {project_members}
     
     정의되어 있는 기능 목록:
-    {features}
+    {feature_data}
     
     프로젝트 시작일:
     {startDate}
@@ -158,7 +220,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     9. 객체의 마지막 항목에는 쉼표를 넣지 마세요.
     10. 배열의 마지막 항목 뒤에도 쉼표를 넣지 마세요.
     11. expected_days는 양의 정수여야 합니다.
-    12. difficulty는 1에서 5 사이의 정수여야 합니다.
+    12. difficulty는 1 이상 5 이하의 정수여야 합니다.
     13. startDate와 endDate는 "YYYY-MM-DD" 형식이어야 합니다.
     14. 각 기능에 대해 다음 항목들을 JSON 형식으로 응답해주세요:
     {{
@@ -184,7 +246,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     message = prompt.format_messages(
         stacks=stacks,
         project_members=project_members,
-        features=features,
+        feature_data=feature_data,
         startDate=project_start_date,
         endDate=project_end_date
     )
@@ -196,63 +258,24 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     # 응답 파싱
     try:
         content = response.content
-        #logger.info("\n=== GPT 원본 응답 ===")
-        #logger.info(content)
-        #logger.info("=== 응답 끝 ===\n")
-        
         try:
             gpt_result = extract_json_from_gpt_response(content)
         except Exception as e:
-            logger.error(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True)
-            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True) from e
-        # JSON 블록 추출
-        # if "```json" in content:
-        #     content = content.split("```json")[1].split("```")[0].strip()
-        # elif "```" in content:
-        #     content = content.split("```")[1].split("```")[0].strip()
-        # else:
-        #     # JSON 블록이 없는 경우 전체 내용에서 첫 번째 { 부터 마지막 } 까지 추출
-        #     start = content.find("{")
-        #     end = content.rfind("}") + 1
-        #     if start != -1 and end != 0:
-        #         content = content[start:end]
+            logger.error(f"GPT util 사용 중 오류 발생: {str(e)}")
+            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}") from e
+        print(f"📌 응답 파싱 후 gpt_result 타입: {type(gpt_result)}")   # 현재 List 반환 중
+        print(f"📌 gpt_result 내용: {gpt_result}")
         
-        # # 줄바꿈과 불필요한 공백 제거
-        # content = content.replace("\n", "").replace("  ", " ").strip()
-        
-        # # 주석 제거 (# 이후의 텍스트 제거)
-        # content = remove_comments_safe(content)
-        
-        # logger.info("\n=== 정리된 JSON 문자열 ===")
-        # logger.info(content)
-        # logger.info("=== JSON 문자열 끝 ===\n")
-        
-        # # JSON 파싱 시도
-        # try:
-        #     result = json.loads(content)
-        #     logger.info("\n=== 파싱된 결과 ===")
-        #     logger.info(json.dumps(result, indent=2, ensure_ascii=False))
-        #     logger.info("=== 결과 끝 ===\n")
-        # except json.JSONDecodeError as e:
-        #     # JSON 파싱 실패 시 문자열 내용 분석
-        #     logger.error("\n=== JSON 파싱 실패 분석 ===")
-        #     logger.error(f"파싱 실패 위치: {e.pos}")
-        #     logger.error(f"문제의 문자: {content[e.pos-10:e.pos+10]}")  # 문제 지점 주변 문자열 출력
-        #     logger.error(f"전체 에러: {str(e)}")
-        #     logger.error("=== 분석 끝 ===\n")
-        #     raise Exception(f"JSON 파싱 실패: {str(e)}") from e
-        
-        logger.debug(f"📌 응답 파싱 후 gpt_result 타입: {type(gpt_result)}, 내용: {repr(gpt_result)[:500]}")   # 현재 List 반환 중
         try:
-            if isinstance(gpt_result, dict) and "features" in gpt_result:
-                feature_list = gpt_result["features"]
-            elif isinstance(gpt_result, list):
-                feature_list = gpt_result
-            else:
-                raise ValueError("GPT 응답이 유효한 features 리스트를 포함하지 않습니다.")
+            feature_list = gpt_result["features"]
         except Exception as e:
-            logger.error(f"GPT 응답 파싱 중 오류 발생: {str(e)}", exc_info=True)
-            raise Exception(f"GPT 응답 파싱 중 오류 발생: {str(e)}", exc_info=True) from e
+            logger.error(f"📌 gpt result에 list 형식으로 접근할 수 없습니다: {str(e)}")
+            raise Exception(f"📌 gpt result에 list 형식으로 접근할 수 없습니다: {str(e)}") from e
+        print(f"📌 feature_list 타입: {type(feature_list)}")   # 여기에서 List 반환되어야 함
+        for i in range(len(feature_list)):
+            print(f"📌 feature_list 하위 항목 타입: {type(feature_list[i])}")   # 여기에서 모두 Dict 반환되어야 함 (PASS)
+            if type(feature_list[i]) != dict:
+                raise ValueError("feature_list 하위 항목은 모두 Dict 형식이어야 합니다.")
         
         features_to_store = []
         for data in feature_list:
@@ -272,91 +295,161 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
                 "expected_days": data["expected_days"],
                 "difficulty": data["difficulty"]
             }
-            features_to_store.append(feature)
-            
-        # 기존 프로젝트 데이터에 features 추가
-        feature_data = features_to_store
-            
+            feature = assign_featureId(feature)
+            print(f"✅ 새롭게 명세된 기능 정보: {feature}")
+            features_to_store.append(feature)   # 현재 JSON 타입과 충돌하지 않음 (List of Dict)
+        
         # Redis에 저장
+        print(f"✅ Redis에 저장되는 feature 정보들: {features_to_store}")
         try:
-            await save_to_redis(f"features:{email}", feature_data)
+            await save_to_redis(f"features:{email}", features_to_store)
         except Exception as e:
-            logger.error(f"feature_specification 초안 Redis 저장 실패: {str(e)}", exc_info=True)
+            logger.error(f"feature_specification 초안 Redis 저장 실패: {str(e)}")
             raise e
         
         # API 응답 반환
         response = {
             "features": [
                 {
-                    "name": data["name"],
-                    "useCase": data["useCase"],
-                    "input": data["input"],
-                    "output": data["output"]
+                    "featureId": feature["_id"],  # assign_featureId에서 할당한 _id 사용
+                    "name": feature["name"],
+                    "useCase": feature["useCase"],
+                    "input": feature["input"],
+                    "output": feature["output"]
                 }
-                for data in feature_list
+                for feature in features_to_store
             ]
         }
         logger.info(f"👉 API 응답 결과: {response}")
         return response
     
     except Exception as e:
-        logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True)
-        raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True) from e
+        logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}")
+        raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}") from e
 
 
-async def update_feature_specification(email: str, feedback: str) -> Dict[str, Any]:
-    """
-    사용자 피드백을 기반으로 기능 명세서를 업데이트합니다.
-    
-    Args:
-        email (str): 사용자 이메일
-        feedback (str): 사용자 피드백
-        
-    Returns:
-        Dict[str, Any]: 업데이트된 기능 명세서 데이터
-            - features: 업데이트된 기능 목록
-            - isNextStep: 다음 단계 진행 여부 (0: 종료, 1: 계속)
-    """
-    
-    raw_feature_specification = await load_from_redis(f"features:{email}")
-    project_data = await load_from_redis(email)
-    if not raw_feature_specification:
-        raise ValueError(f"Feature specification for user {email} not found")
+### ======== Update Feature Specification ======== ###
+async def update_feature_specification(email: str, feedback: str, createdFeatures: List[Dict[str, Any]], modifiedFeatures: List[Dict[str, Any]], deletedFeatures: List[str]) -> Dict[str, Any]:
+    try:
+        draft_feature_specification = await load_from_redis(f"features:{email}")
+    except Exception as e:
+        logger.error(f"Redis로부터 기능 명세서 초안 불러오기 실패: {str(e)}")
+        raise Exception(f"Redis로부터 기능 명세서 초안 불러오기 실패: {str(e)}") from e
     
     # Redis에서 가져온 데이터가 문자열인 경우 JSON 파싱
-    if isinstance(raw_feature_specification, str):
-        raw_feature_specification = json.loads(raw_feature_specification)
-    current_features = raw_feature_specification
+    if isinstance(draft_feature_specification, str):
+        draft_feature_specification = json.loads(draft_feature_specification)
+    try:
+        project_data = await load_from_redis(email)
+    except Exception as e:
+        logger.error(f"Redis로부터 프로젝트 데이터 불러오기 실패: {str(e)}")
+        raise Exception(f"Redis로부터 프로젝트 데이터 불러오기 실패: {str(e)}") from e
     
-    startDate = project_data.get("startDate")
-    endDate = project_data.get("endDate")
+    #print(f"👍 프로젝트 데이터 type: ", type(project_data)) # Dict가 반환됨
+
+    project_start_date = project_data.get("startDate")
+    project_end_date = project_data.get("endDate")  # 🚨 Project EndDate는 변경될 수 있음
+    
+    # 프로젝트 멤버와 스택 정보 추출    # 🚨 Project Members와 Stacks는 변경될 수 있음
+    project_members = []
+    stacks = []
+    
+    for member in project_data.get("members", []):
+        try:
+            name = member.get("name")
+            profiles = member.get("profiles", [])
+            for profile in profiles:
+                if profile.get("projectId") == project_data.get("projectId"):
+                    stacks.extend(profile.get("stacks", []))
+                    position = profile.get("positions", [])[0] if profile.get("positions") else ""
+                    member_info = [
+                        name,
+                        position,
+                        ", ".join(profile.get("stacks", []))
+                    ]
+                    project_members.append(", ".join(str(item) for item in member_info))
+        except Exception as e:
+            logger.error(f"멤버 정보 처리 중 오류 발생: {str(e)}")
+            continue
+    
+    current_features = draft_feature_specification
+    
+    print(f"project_start_date: {project_start_date}")
+    print(f"project_end_date: {project_end_date}")
+    print(f"project_members: {project_members}")
+    print(f"stacks: {stacks}")
+    print(f"current_features: {current_features}")
+    
+    prev_feat_num = len(current_features)
+    ######### 삭제된 기능들 제거 (deletedFeatures는 featureId의 배열임)
+    for deleted_feature in deletedFeatures:
+        current_features = [feature for feature in current_features if feature["_id"] != deleted_feature]   # current features 목록에서 deleted features 배제
+        
+    print(f"삭제된 기능들 제거 결과: {current_features}\n전체 기능의 갯수가 {prev_feat_num}개에서 {len(current_features)}개로 줄었습니다.")
+    
+    # 현재 기능들을 featureId를 키로 하는 딕셔너리로 변환
+    feature_dict = {feature["_id"]: feature for feature in current_features}
+    ######### 수정된 기능들로 업데이트
+    for modified_feature in modifiedFeatures:
+        feature_id = modified_feature["featureId"]
+        if feature_id in feature_dict:
+            feature = feature_dict[feature_id]
+            feature.update({
+                "name": modified_feature["name"],
+                "useCase": modified_feature["useCase"],
+                "input": modified_feature["input"],
+                "output": modified_feature["output"]
+            })
+    # 딕셔너리에서 다시 리스트로 변환
+    try:
+        current_features = list(feature_dict.values())
+    except Exception as e:
+        logger.error(f"current_features dict에서 list로 형변환 중 오류 발생: {str(e)}")
+        raise Exception(f"current_features dict에서 list로 형변환 중 오류 발생: {str(e)}") from e
+    
+    print(f"수정된 기능들 업데이트 결과: {current_features}")
+    
+    ######### 생성된 기능들 추가
+    for created_feature in createdFeatures:
+        current_features.append(created_feature)
+    
+    print(f"생성된 기능들 추가 결과: {current_features}")
+    
     
     # 피드백 분석 및 기능 업데이트
     update_prompt = ChatPromptTemplate.from_template("""
-    당신은 사용자의 피드백을 분석하고 기능 명세서를 업데이트하는 전문가입니다.
-    반드시 아래 형식의 JSON으로만 응답해주세요. 추가 설명이나 주석은 절대 포함하지 마세요.
-
-    현재 기능 목록:
-    {current_features}
+    당신은 사용자의 피드백을 분석하고 프로젝트 정보를 바탕으로 기능 명세에서 누락된 정보를 생성하거나 피드백을 반영하여 정보를 수정하는 전문가입니다.
+    반드시 JSON으로만 응답해주세요. 추가 설명이나 주석은 절대 포함하지 마세요.
+    _id는 절대 수정하지 말고, 값이 없더라도 추가하지 마세요. current_features에 제시된 _id의 값과 동일한 값만 반환하세요.
     
     프로젝트 정보:
-    {project_data}
-
-    다음은 기능 명세 단계에서 받은 사용자의 피드백입니다:
-    {feedback}
+    1. 프로젝트 시작일:
+    {startDate}
+    2. 프로젝트 종료일:
+    {endDate}
+    3. 프로젝트 멤버별 [이름, 역할, 스택]:
+    {project_members}
+    4. 프로젝트에서 사용 중인 스택:
+    {stacks}
+    5. 프로젝트에 현재 포함되어 있는 기능 목록:
+    {current_features}
+    
+    사용자 피드백:
+    다음은 기능 명세 단계에서 받은 사용자의 피드백입니다: {feedback}
     이 피드백이 다음 중 어떤 유형인지 판단해주세요:
-
+    
     1. 수정/삭제 요청:
-       예시: "담당자를 다른 사람으로 변경해 주세요", "~기능 개발 우선순위를 낮추세요", "~기능을 삭제해주세요"
+    예시: "담당자를 다른 사람으로 변경해 주세요", "~기능 개발 우선순위를 낮추세요", "~기능을 삭제해주세요"
 
     2. 종료 요청:
-       예시: "이대로 좋습니다", "더 이상 수정할 필요 없어요", "다음으로 넘어가죠"
+    예시: "이대로 좋습니다", "더 이상 수정할 필요 없어요", "다음으로 넘어가죠"
 
     다음 형식으로 응답해주세요:
     {{
         "isNextStep": 0 또는 1,  # 0: 수정/삭제 요청, 1: 종료 요청
         "features": [
             {{
+                "_id": "기능의 고유 ID",
                 "name": "기능명",
                 "useCase": "사용 사례",
                 "input": "입력 데이터",
@@ -378,21 +471,23 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
     1. 반드시 위 JSON 형식을 정확하게 따라주세요.
     2. 모든 문자열은 쌍따옴표(")로 감싸주세요.
     3. 객체의 마지막 항목에는 쉼표를 넣지 마세요.
-    4. 수정된 기능만 포함하고, 수정되지 않은 기능은 제외해주세요.
+    4. features에서 null로 전달된 값이 있는 필드는 형식에 맞게 채워주세요.
     5. isNextStep은 사용자의 피드백이 종료 요청인 경우 1, 수정/삭제 요청인 경우 0으로 설정해주세요.
     6. 각 기능의 모든 필드를 포함해주세요.
     7. difficulty는 1에서 5 사이의 정수여야 합니다.
     8. expected_days는 양의 정수여야 합니다.
     9. 절대 주석을 추가하지 마세요.
     10. startDate와 endDate는 프로젝트 시작일인 {startDate}와 종료일인 {endDate} 사이에 있어야 하며, 그 기간이 expected_days와 일치해야 합니다.
+    11. 요청에 포함된 값들 중 null이 존재할 경우, 해당 필드를 조건에 맞게 생성해 주세요.
     """)
     
     messages = update_prompt.format_messages(
-        current_features=str(current_features),
-        project_data=str(project_data),
+        startDate=project_start_date,
+        endDate=project_end_date,
+        current_features=current_features,
+        project_members=project_members,
+        stacks=stacks,
         feedback=feedback,
-        startDate=startDate,
-        endDate=endDate
     )
     
     # LLM Config
@@ -405,66 +500,12 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
     # 응답 파싱
     try:
         content = response.content
-        #logger.info("\n=== GPT 원본 응답 ===")
-        #logger.info(content)
-        #logger.info("=== 응답 끝 ===\n")
-        
-        try: 
+        try:
             gpt_result = extract_json_from_gpt_response(content)
         except Exception as e:
-            logger.error(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True)
-            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True) from e
-        # JSON 블록 추출 전 content 정리
-        #content = content.strip()
+            logger.error(f"GPT util 사용 중 오류 발생: {str(e)}")
+            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}") from e
         
-        # JSON 블록 추출
-        # if "```json" in content:
-        #     content = content.split("```json")[1].split("```")[0].strip()
-        # elif "```" in content:
-        #     content = content.split("```")[1].split("```")[0].strip()
-        
-        # # 줄바꿈과 불필요한 공백 제거
-        # content = content.replace("\n", " ").replace("\r", " ")
-        # while "  " in content:
-        #     content = content.replace("  ", " ")
-        # content = content.strip()
-        
-        # # 주석 제거
-        # content_parts = []
-        # in_string = False
-        # comment_start = -1
-        
-        # for i, char in enumerate(content):
-        #     if char == '"' and (i == 0 or content[i-1] != '\\'):
-        #         in_string = not in_string
-        #     elif char == '#' and not in_string:
-        #         if comment_start == -1:
-        #             comment_start = i
-        #     elif char in '{[,' and comment_start != -1:
-        #         content_parts.append(content[comment_start:i].strip())
-        #         comment_start = -1
-        
-        # if comment_start != -1:
-        #     content_parts.append(content[comment_start:].strip())
-        
-        # for part in content_parts:
-        #     content = content.replace(part, '')
-        
-        # logger.info("\n=== 정리된 JSON 문자열 ===")
-        # logger.info(content)
-        # logger.info("=== JSON 문자열 끝 ===\n")
-        
-        # JSON 파싱
-        #try:
-            #result = json.loads(content)
-        #except json.JSONDecodeError as e:
-        #    logger.error("\n=== JSON 파싱 실패 분석 ===")
-        #    logger.error(f"파싱 실패 위치: {e.pos}")
-        #    logger.error(f"문제의 문자: {content[max(0, e.pos-20):min(len(content), e.pos+20)]}")
-        #    logger.error(f"전체 에러: {str(e)}")
-        #    logger.error("=== 분석 끝 ===\n")
-        #    raise
-
         # 응답 검증
         if isinstance(gpt_result, dict) and "features" in gpt_result:
             feature_list = gpt_result["features"]
@@ -488,7 +529,7 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
         # 각 기능 검증
         for feature in feature_list:
             required_fields = [
-                "name", "useCase", "input", "output", "precondition", "postcondition",
+                "_id", "name", "useCase", "input", "output", "precondition", "postcondition",
                 "stack", "expected_days", "startDate", "endDate", "difficulty"
             ]
             for field in required_fields:
@@ -504,12 +545,12 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
             if not isinstance(feature["difficulty"], int) or not 1 <= feature["difficulty"] <= 5:
                 raise ValueError(f"기능 '{feature['name']}'의 difficulty 형식이 잘못되었습니다.")
             
-            if not feature["startDate"] >= startDate or not feature["endDate"] <= endDate:
-                raise ValueError(f"기능 '{feature['name']}'의 startDate와 endDate는 프로젝트 시작일인 {startDate}와 종료일인 {endDate} 사이에 있어야 합니다.")
+            if not feature["startDate"] >= project_start_date or not feature["endDate"] <= project_end_date:
+                raise ValueError(f"기능 '{feature['name']}'의 startDate와 endDate는 프로젝트 시작일인 {project_start_date}와 종료일인 {project_end_date} 사이에 있어야 합니다.")
         
     except Exception as e:
-        logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True)
-        raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True) from e
+        logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}")
+        raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}") from e
     
     # 업데이트된 기능 정보를 기존 기능 리스트와 융합
     updated_map = {feature["name"]: feature for feature in feature_list}
@@ -524,8 +565,10 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
             merged_feature = current_feature.copy()
             
             # expected_days나 difficulty가 변경되었는지 확인
-            expected_days_changed = updated["expected_days"] != current_feature["expected_days"]
-            difficulty_changed = updated["difficulty"] != current_feature["difficulty"]
+            if current_feature["expected_days"] is not None and updated["expected_days"] != current_feature["expected_days"]:
+                expected_days_changed = True
+            if current_feature["difficulty"] is not None and updated["difficulty"] != current_feature["difficulty"]:
+                difficulty_changed = True
             
             merged_feature.update({
                 "useCase": updated["useCase"],
@@ -556,6 +599,11 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
             # 업데이트되지 않은 기능은 그대로 유지
             merged_features.append(current_feature)
     
+    # _id가 없는 기능에 대해 assign_featureId 호출
+    for feature in merged_features:
+        if "_id" not in feature:
+            feature = assign_featureId(feature)
+    
     # 업데이트된 기능 목록으로 교체
     logger.info("\n=== 업데이트된 feature_specification 데이터 ===")
     logger.info(json.dumps(merged_features, indent=2, ensure_ascii=False))
@@ -563,9 +611,9 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
     
     # Redis에 저장
     try:
-        await save_to_redis(f"feature:{email}", merged_features)
+        await save_to_redis(f"features:{email}", merged_features)
     except Exception as e:
-        logger.error(f"업데이트된 feature_specification Redis 저장 실패: {str(e)}", exc_info=True)
+        logger.error(f"업데이트된 feature_specification Redis 저장 실패: {str(e)}")
         raise e
     
     # 다음 단게로 넘어가는 경우, MongoDB에 Redis의 데이터를 옮겨서 저장
@@ -574,6 +622,7 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
             feature_collection = await get_feature_collection()
             for feat in merged_features:
                 feature_data = {
+                    "featureId": feat["_id"],
                     "name": feat["name"],
                     "useCase": feat["useCase"],
                     "input": feat["input"],
@@ -590,21 +639,21 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
                     "createdAt": datetime.datetime.utcnow()
                 }
                 try:
-                    insert_result = await feature_collection.insert_one(feature_data)
-                    featureId = str(insert_result.inserted_id)
-                    logger.info(f"{feat['name']} MongoDB 저장 성공 (ID: {featureId})")
+                    await feature_collection.insert_one(feature_data)
+                    logger.info(f"{feat['name']} MongoDB 저장 성공 (ID: {feat['_id']})")
                 except Exception as e:
-                    logger.error(f"{feat['name']} MongoDB 저장 실패: {str(e)}", exc_info=True)
+                    logger.error(f"{feat['name']} MongoDB 저장 실패: {str(e)}")
                     raise e
             logger.info("모든 feature MongoDB 저장 완료")
         except Exception as e:
-            logger.error(f"feature_specification MongoDB 저장 실패: {str(e)}", exc_info=True)
+            logger.error(f"feature_specification MongoDB 저장 실패: {str(e)}")
             raise e
     
     # API 응답 반환
     response = {
         "features": [
             {
+                "featureId": feature["_id"],
                 "name": feature["name"],
                 "useCase": feature["useCase"],
                 "input": feature["input"],
