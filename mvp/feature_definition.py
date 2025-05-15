@@ -70,7 +70,7 @@ async def create_feature_definition(email: str, description: str, definition_url
                         
                         async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
                             definition_content = await f.read()
-                            logger.info(f"정의서 내용: {definition_content}")
+                            #logger.info(f"정의서 내용: {definition_content}")
                     else:
                         logger.error(f"기능 정의서 다운로드 실패: {response.status}")
         except Exception as e:

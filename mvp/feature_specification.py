@@ -203,8 +203,8 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         try:
             gpt_result = extract_json_from_gpt_response(content)
         except Exception as e:
-            logger.error(f"GPT util 사용 중 오류 발생: {str(e)}")
-            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}") from e
+            logger.error(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True)
+            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True) from e
         # JSON 블록 추출
         # if "```json" in content:
         #     content = content.split("```json")[1].split("```")[0].strip()
@@ -243,12 +243,16 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         #     raise Exception(f"JSON 파싱 실패: {str(e)}") from e
         
         logger.debug(f"📌 응답 파싱 후 gpt_result 타입: {type(gpt_result)}, 내용: {repr(gpt_result)[:500]}")   # 현재 List 반환 중
-        if isinstance(gpt_result, dict) and "features" in gpt_result:
-            feature_list = gpt_result["features"]
-        elif isinstance(gpt_result, list):
-            feature_list = gpt_result
-        else:
-            raise ValueError("GPT 응답이 유효한 features 리스트를 포함하지 않습니다.")
+        try:
+            if isinstance(gpt_result, dict) and "features" in gpt_result:
+                feature_list = gpt_result["features"]
+            elif isinstance(gpt_result, list):
+                feature_list = gpt_result
+            else:
+                raise ValueError("GPT 응답이 유효한 features 리스트를 포함하지 않습니다.")
+        except Exception as e:
+            logger.error(f"GPT 응답 파싱 중 오류 발생: {str(e)}", exc_info=True)
+            raise Exception(f"GPT 응답 파싱 중 오류 발생: {str(e)}", exc_info=True) from e
         
         features_to_store = []
         for data in feature_list:
@@ -277,7 +281,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         try:
             await save_to_redis(f"features:{email}", feature_data)
         except Exception as e:
-            logger.error(f"feature_specification 초안 Redis 저장 실패: {str(e)}")
+            logger.error(f"feature_specification 초안 Redis 저장 실패: {str(e)}", exc_info=True)
             raise e
         
         # API 응답 반환
@@ -296,8 +300,8 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         return response
     
     except Exception as e:
-        logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}")
-        raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}") from e
+        logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True)
+        raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True) from e
 
 
 async def update_feature_specification(email: str, feedback: str) -> Dict[str, Any]:
@@ -408,8 +412,8 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
         try: 
             gpt_result = extract_json_from_gpt_response(content)
         except Exception as e:
-            logger.error(f"GPT util 사용 중 오류 발생: {str(e)}")
-            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}") from e
+            logger.error(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True)
+            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True) from e
         # JSON 블록 추출 전 content 정리
         #content = content.strip()
         
@@ -504,8 +508,8 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
                 raise ValueError(f"기능 '{feature['name']}'의 startDate와 endDate는 프로젝트 시작일인 {startDate}와 종료일인 {endDate} 사이에 있어야 합니다.")
         
     except Exception as e:
-        logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}")
-        raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}") from e
+        logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True)
+        raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True) from e
     
     # 업데이트된 기능 정보를 기존 기능 리스트와 융합
     updated_map = {feature["name"]: feature for feature in feature_list}
@@ -561,7 +565,7 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
     try:
         await save_to_redis(f"feature:{email}", merged_features)
     except Exception as e:
-        logger.error(f"업데이트된 feature_specification Redis 저장 실패: {str(e)}")
+        logger.error(f"업데이트된 feature_specification Redis 저장 실패: {str(e)}", exc_info=True)
         raise e
     
     # 다음 단게로 넘어가는 경우, MongoDB에 Redis의 데이터를 옮겨서 저장
@@ -590,11 +594,11 @@ async def update_feature_specification(email: str, feedback: str) -> Dict[str, A
                     featureId = str(insert_result.inserted_id)
                     logger.info(f"{feat['name']} MongoDB 저장 성공 (ID: {featureId})")
                 except Exception as e:
-                    logger.error(f"{feat['name']} MongoDB 저장 실패: {str(e)}")
+                    logger.error(f"{feat['name']} MongoDB 저장 실패: {str(e)}", exc_info=True)
                     raise e
             logger.info("모든 feature MongoDB 저장 완료")
         except Exception as e:
-            logger.error(f"feature_specification MongoDB 저장 실패: {str(e)}")
+            logger.error(f"feature_specification MongoDB 저장 실패: {str(e)}", exc_info=True)
             raise e
     
     # API 응답 반환

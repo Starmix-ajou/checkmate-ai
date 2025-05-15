@@ -18,7 +18,8 @@ from redis_setting import test_redis_connection
 # 로깅 설정
 logging.basicConfig(
     level=logging.INFO,
-    format='%(name)s - %(message)s'
+    format='%(name)s - %(message)s', 
+    filename='mvp.log'
 )
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ async def post_definition(request: FeatureDefinitionPOSTRequest):
         logger.info(f"✅ 처리 결과: {result}")
         return result
     except Exception as e:
-        logger.error(f"🔥 예외 발생: {str(e)}")
+        logger.error(f"🔥 예외 발생: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"기능 정의서 생성 중 오류 발생: {str(e)}"
@@ -90,7 +91,7 @@ async def put_definition(request: FeatureDefinitionPUTRequest):
         logger.info(f"✅ 처리 결과: {result}")
         return result
     except Exception as e:
-        logger.error(f"🔥 예외 발생: {str(e)}")
+        logger.error(f"🔥 예외 발생: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"기능 정의서 업데이트 중 오류 발생: {str(e)}"
@@ -104,7 +105,7 @@ async def post_specification(request: FeatureSpecificationPOSTRequest):
         logger.info(f"✅ 처리 결과: {result}")
         return result
     except Exception as e:
-        logger.error(f"🔥 예외 발생: {str(e)}")
+        logger.error(f"🔥 예외 발생: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"기능 명세서 생성 중 오류 발생: {str(e)}"
@@ -118,7 +119,7 @@ async def put_specification(request: FeatureSpecificationPUTRequest):
         logger.info(f"✅ 처리 결과: {result}")
         return result
     except Exception as e:
-        logger.error(f"🔥 예외 발생: {str(e)}")
+        logger.error(f"🔥 예외 발생: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"기능 명세서 업데이트 중 오류 발생: {str(e)}"
