@@ -360,18 +360,91 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
         logger.info(f"✅ {feature['name']}의 재조정된 예상 작업시간: {feature['expected_days']}")
     
     ### 최종적으로 구성된 eff_mandays 내부에 sprint별로 포함된 task들의 '재조정된 기능별 예상 작업시간'의 총합이 들어오는지 확인
-    modified_feat_expected_days = 0
+    total_sum_of_modified_expected_days = 0
+    
     for sprint in sprints:
+        sum_of_modified_expected_days_per_sprint = 0
         epic_titles = sprint["epic_titles"]
         for epic in epics:
             if epic["epicTitle"] in epic_titles:
                 for feature in features:
                     if feature["featureId"] in epic["featureIds"]:
                         logger.info(f"✅ {feature['name']}이 {epic['epicTitle']}에 속합니다.")
-                        modified_feat_expected_days += feature["expected_days"]
-    if eff_mandays < modified_feat_expected_days:
-        logger.error(f"⚠️ 최종적으로 구성된 eff_mandays 내부에 sprint별로 포함된 task들의 '재조정된 기능별 예상 작업시간'의 총합이 들어오지 않습니다. eff_mandays: {eff_mandays}, modified_feat_expected_days: {modified_feat_expected_days}")
-        raise Exception(f"⚠️ 최종적으로 구성된 eff_mandays 내부에 sprint별로 포함된 task들의 '재조정된 기능별 예상 작업시간'의 총합이 들어오지 않습니다. eff_mandays: {eff_mandays}, modified_feat_expected_days: {modified_feat_expected_days}")
+                        sum_of_modified_expected_days_per_sprint += feature["expected_days"]
+        total_sum_of_modified_expected_days += sum_of_modified_expected_days_per_sprint
+        if eff_mandays < sum_of_modified_expected_days_per_sprint:
+            logger.warning(f"⚠️ 스프린트에 설정된 효율적인 작업 일수가 스프린트에 포함된 태스크들의 예상 작업 일수의 합보다 작습니다.")
+    if eff_mandays < total_sum_of_modified_expected_days:
+        logger.warning(f"⚠️ 스프린트에 설정된 효율적인 작업 일수가 스프린트에 속한 모든 태스크들의 에상 작업 일수의 합보다 작습니다.")
+        
+    # GPT를 통해 feature의 expected_days 재조정
+    adjust_prompt = ChatPromptTemplate.from_template("""
+    당신은 프로젝트 일정 조정 전문가입니다. 현재 스프린트의 작업량이 개발팀의 실제 작업 가능 시간보다 많습니다.
+    각 feature의 expected_days를 조정하여 전체 작업량을 줄여야 합니다.
+        
+    현재 스프린트 정보:
+    {sprints}
+        
+    현재 Epic 정보:
+    {epics}
+        
+    현재 Feature 정보:
+    {features}
+        
+    개발팀의 실제 작업 가능 시간(eff_mandays): {eff_mandays}
+    현재 예상 작업 시간(total_sum_of_modified_expected_days): {total_sum_of_modified_expected_days}
+        
+    다음 사항을 고려하여 각 feature의 expected_days를 조정해주세요:
+    1. 전체 작업량이 eff_mandays 이내가 되도록 조정
+    2. 우선순위가 높은 feature는 가능한 한 원래 예상 시간을 유지
+    3. 우선순위가 낮은 feature의 작업 시간을 더 많이 줄잔
+    4. 각 feature의 expected_days는 최소 0.5일 이상 유지
+        
+    다음 형식으로 응답해주세요:
+    {{
+        "features": [
+            {{
+                "featureId": "feature_id",
+                "expected_days": 조정된_예상_작업_시간
+            }},
+            ...
+        ]
+    }}
+    """)
+        
+    messages = adjust_prompt.format_messages(
+        sprints=sprints,
+        epics=epics,
+        features=features,
+        eff_mandays=eff_mandays,
+        total_sum_of_modified_expected_days=total_sum_of_modified_expected_days
+    )
+        
+    llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0.3)
+    response = await llm.ainvoke(messages)
+        
+    try:
+        content = response.content
+        try:
+            adjusted_result = extract_json_from_gpt_response(content)
+        except Exception as e:
+            logger.error(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True)
+            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True) from e
+    except Exception as e:
+        logger.error(f"GPT API 처리 중 오류 발생: {e}", exc_info=True)
+        raise e
+            
+    # feature의 expected_days 업데이트
+    for adjusted_feature in adjusted_result["features"]:
+        for feature in features:
+            if feature["featureId"] == adjusted_feature["featureId"]:
+                logger.info(f"✅ {feature['name']}의 예상 작업시간이 {feature['expected_days']}시간에서 {adjusted_feature['expected_days']}시간으로 조정되었습니다.")
+                feature["expected_days"] = adjusted_feature["expected_days"]
+        total_sum_of_modified_expected_days = sum(feature["expected_days"] for feature in features)
+        # 조정된 작업량 확인
+        if eff_mandays < total_sum_of_modified_expected_days:
+            logger.error(f"⚠️ 작업량 조정 후에도 eff_mandays({eff_mandays})가 total_sum_of_modified_expected_days({total_sum_of_modified_expected_days})보다 작습니다.")
+            raise Exception(f"⚠️ 작업량 조정 후에도 eff_mandays({eff_mandays})가 total_sum_of_modified_expected_days({total_sum_of_modified_expected_days})보다 작습니다.")
     
     # API 응답 반환
     response = [
