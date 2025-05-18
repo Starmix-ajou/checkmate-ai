@@ -299,7 +299,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
                 "difficulty": data["difficulty"]
             }
             feature = assign_featureId(feature)
-            print(f"✅ 새롭게 명세된 기능 정보: {feature}")
+            logger.info(f"✅ 새롭게 명세된 기능 정보: {feature}")
             features_to_store.append(feature)   # 현재 JSON 타입과 충돌하지 않음 (List of Dict)
         
         # Redis에 저장
@@ -377,18 +377,18 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
     
     current_features = draft_feature_specification
     
-    print(f"project_start_date: {project_start_date}")
-    print(f"project_end_date: {project_end_date}")
-    print(f"project_members: {project_members}")
-    print(f"stacks: {stacks}")
-    print(f"current_features: {current_features}")
+    logger.info(f"project_start_date: {project_start_date}")
+    logger.info(f"project_end_date: {project_end_date}")
+    logger.info(f"project_members: {project_members}")
+    logger.info(f"stacks: {stacks}")
+    logger.info(f"current_features: {current_features}")
     
     prev_feat_num = len(current_features)
     ######### 삭제된 기능들 제거 (deletedFeatures는 featureId의 배열임)
     for deleted_feature in deletedFeatures:
         current_features = [feature for feature in current_features if feature["_id"] != deleted_feature]   # current features 목록에서 deleted features 배제
         
-    print(f"삭제된 기능들 제거 결과: {current_features}\n전체 기능의 갯수가 {prev_feat_num}개에서 {len(current_features)}개로 줄었습니다.")
+    logger.info(f"삭제된 기능들 제거 결과: {current_features}\n전체 기능의 갯수가 {prev_feat_num}개에서 {len(current_features)}개로 줄었습니다.")
     
     # 현재 기능들을 featureId를 키로 하는 딕셔너리로 변환
     feature_dict = {feature["_id"]: feature for feature in current_features}
@@ -410,13 +410,13 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
         logger.error(f"current_features dict에서 list로 형변환 중 오류 발생: {str(e)}")
         raise Exception(f"current_features dict에서 list로 형변환 중 오류 발생: {str(e)}") from e
     
-    print(f"수정된 기능들 업데이트 결과: {current_features}")
+    logger.info(f"수정된 기능들 업데이트 결과: {current_features}")
     
     ######### 생성된 기능들 추가
     for created_feature in createdFeatures:
         current_features.append(created_feature)
     
-    print(f"생성된 기능들 추가 결과: {current_features}")
+    logger.info(f"생성된 기능들 추가 결과: {current_features}")
     
     
     # 피드백 분석 및 기능 업데이트

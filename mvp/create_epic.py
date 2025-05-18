@@ -22,10 +22,14 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-feature_collection = get_feature_collection()
-project_collection = get_project_collection()
-epic_collection = get_epic_collection()
-
+async def init_collections():
+    global feature_collection, project_collection, epic_collection
+    feature_collection = None
+    project_collection = None
+    epic_collection = None
+    feature_collection = await get_feature_collection()
+    project_collection = await get_project_collection()
+    epic_collection = await get_epic_collection()
 
 async def create_epic(project_id: str) -> int:
     """
@@ -39,9 +43,9 @@ async def create_epic(project_id: str) -> int:
         Dict[str, Any]: epic 정의 정보
     """
     try:
-        features = feature_collection.find({"projectId": project_id})
+        features = await feature_collection.find({"projectId": project_id}).to_list(length=None)
     except Exception as e:
-        logger.error(f"feature_collection.find_one 중 오류 발생: {e}", exc_info=True)
+        logger.error(f"MongoDB에서 Features 정보 로드 중 오류 발생: {e}", exc_info=True)
         raise e
     print(f"features로부터 epic 생성을 시작합니다.\nfeatures: {features}")
     
@@ -99,8 +103,9 @@ async def create_epic(project_id: str) -> int:
         raise Exception(f"GPT API 처리 중 오류 발생: {str(e)}", exc_info=True) from e
     
     epic_to_store = []
-    print(f"epic 수: {gpt_result['number_of_epics']}")
-    for epic in gpt_result["epics"]:
+    epics = gpt_result["epics"]
+    logger.info("⚙️ gpt가 반환한 결과로부터 epic 정보를 추출합니다.")
+    for epic in epics:
         epic_title = epic["epic_title"]
         epic_description = epic["epic_description"]
         feature_ids = epic["featureIds"]
@@ -122,54 +127,99 @@ async def create_epic(project_id: str) -> int:
         }
         epic_to_store.append(epic_data)
     
+    # Redis에 저장할 때 gpt_result 형식 유지
+    redis_data = {
+        "number_of_epics": gpt_result["number_of_epics"],
+        "epics": epic_to_store
+    }
+    
     try:
-        await save_to_redis(f"epic:{project_id}", epic_to_store)
+        await save_to_redis(f"epic:{project_id}", redis_data)
     except Exception as e:
         logger.error(f"Redis에 Epic 데이터 저장 중 오류 발생: {e}", exc_info=True)
         raise e
-    return gpt_result["number_of_epics"]
+    return redis_data
 
 
-async def create_sprint(project_id: str) -> List[Dict[str, Any]]:
-    try:
-        epics = await load_from_redis(f"epic:{project_id}")
-    except Exception as e:
-        logger.error(f"Redis로부터 Epic 정보 로드 중 오류 발생: {e}", exc_info=True)
-        raise e
-    if number_of_epics == 0:
-        # Epic부터 정의해야 합니다.
-        print("Epic이 아직 정의되지 않은 프로젝트입니다. Epic을 정의합니다.")
-        number_of_epics = await create_epic(project_id)
-        print(f"정의된 Epic의 수: {number_of_epics}")
+async def calculate_eff_mandays(efficiency_factor: float, number_of_developers: int, sprint_days: int, workhours_per_day: int) -> float:
+
+    logger.info(f"개발자 수: {number_of_developers}명, 1일 개발 업무시간: {workhours_per_day}시간, 스프린트 주기: {sprint_days}일, 효율성 계수: {efficiency_factor}")
+    mandays = number_of_developers * sprint_days * workhours_per_day
+    logger.info(f"⚙️ Sprint별 작업 배정 시간: {mandays}시간")
+    eff_mandays = mandays * efficiency_factor
+    logger.info(f"⚙️ Sprint별 효율적인 작업 배정 시간: {eff_mandays}시간")
     
-    # 이제 Epic이 정의되어 있으므로 Sprint의 뼈대를 구성합니다.
-    print(f"정의된 Epic을 기반으로 Sprint의 뼈대를 구성합니다. 정의된 Epic의 수: {number_of_epics}")
+    return eff_mandays
+
+### ======== Create Sprint ======== ###
+async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    logger.info(f"🔍 스프린트 생성 시작: {project_id}")
+    await init_collections()
+    
+    if pending_tasks_ids is not None and len(pending_tasks_ids) > 0:
+        logger.info(f"🔍 이번 스프린트에서 제외되는 기능들: {pending_tasks_ids}")
+        ### Pending Tasks를 features 목록 내에서 열외
+    
+    logger.info(f"🔍 이번 스프린트에서 제외되는 기능 없음")
     try:
-        features = feature_collection.find_one({"projectId": project_id})
+        features = await feature_collection.find({"projectId": project_id}).to_list(length=None)
+        logger.info("✅ Mongodb에서 projectId와 일치하는 기능들 조회 완료")
     except Exception as e:
         logger.error(f"MongoDB에서 Features 정보 로드 중 오류 발생: {e}", exc_info=True)
         raise e
     
+    try:
+        epics = await load_from_redis(f"epic:{project_id}")
+        logger.info("✅ Redis에서 Epic 정보 로드 완료")
+        # Redis에서 불러온 데이터가 리스트인 경우 gpt_result 형식으로 변환
+        if isinstance(epics, list):
+            epics = {
+                "number_of_epics": len(epics),
+                "epics": epics
+            }
+    except Exception as e:
+        logger.error(f"Redis로부터 Epic 정보 로드 중 오류 발생: {e}", exc_info=True)
+        raise e
+    if not epics:   # epic 정보가 redis에 없는 경우
+        # epic부터 정의합니다.
+        logger.info("Epic이 아직 정의되지 않은 프로젝트입니다. Epic을 정의합니다.")
+        epics = await create_epic(project_id)
+        logger.info("✅ Epic 정의 완료")
+        logger.info(f"새롭게 정의된 Epic의 수: {epics['number_of_epics']}")
+    
+    # 이제 Epic이 정의되어 있으므로 Sprint의 뼈대를 구성합니다.
+    logger.info(f"이제 정의된 Epic을 기반으로 Sprint의 뼈대를 구성합니다. 정의되어 있는 Epic의 수: {epics['number_of_epics']}")
+    
     # Epic 별 누적 우선순위 값 계산
-    for epic in epics:
-        priority_sum = 0
-        target_features = epic["featureIds"]
-        for feature in features:
-            if feature["featureId"] in target_features:
-                print(f"{feature['name']}가 {epic['epicTitle']}에 속합니다.")
-                priority_sum += feature["priority"]
-        epic["prioritySum"] = priority_sum
-        print(f"{epic['epicTitle']}의 누적 우선순위 값: {priority_sum}")
-            
+    epics = epics["epics"]
+    try:
+        for epic in epics:
+            priority_sum = 0
+            target_features = epic["featureIds"]
+            for feature in features:
+                if feature["featureId"] in target_features:
+                    logger.info(f"{feature['name']}가 {epic['epicTitle']}에 속합니다.")
+                    priority_sum += feature["priority"]
+            epic["prioritySum"] = priority_sum
+            logger.info(f"{epic['epicTitle']}의 누적 우선순위 값: {priority_sum}")
+    except Exception as e:
+        logger.error(f"Epic 별 누적 우선순위 값 계산 중 오류 발생: {e}", exc_info=True)
+        raise e
+    
     # 누적 우선순위 값이 높은 순서대로 정렬
-    epics.sort(key=lambda x: x["prioritySum"], reverse=True)
-    print(f"정렬된 Epic 정보: {epics}")
+    try: 
+        epics.sort(key=lambda x: x["prioritySum"], reverse=True)
+        logger.info(f"우선순위가 높은 순서대로 정렬된 Epic 정보: {epics}")
+    except Exception as e:
+        logger.error(f"Epic 우선순위 오름차순 정렬 중 오류 발생: {e}", exc_info=True)
+        raise e
     
     # 정렬된 Epic 정보를 Redis에 저장
     await save_to_redis(f"epic:{project_id}", epics)    # 이제 Epic들은 Redis에 누적 우선순위가 높은 순서대로 정렬되어 있음.
+    logger.info(f"✅ Redis에 정렬된 epic 정보를 저장하였습니다.")
 
-    features = feature_collection.find({"projectId": project_id})
-    epics = load_from_redis(f"epic:{project_id}")
+    #features = await load_from_redis(f"features:{project_id}")
+    epics = await load_from_redis(f"epic:{project_id}")
     # 적절한 Sprint 주기 찾기
     # 사용하는 정보: 전체 프로젝트 기간, 각 task별 기간과 우선순위, 각 Epic별 누적 우선순위
     sprint_prompt = ChatPromptTemplate.from_template("""
@@ -186,12 +236,14 @@ async def create_sprint(project_id: str) -> List[Dict[str, Any]]:
     결과를 다음과 같은 형식으로 반환해 주세요.
     {{{{
         "number_of_sprints": 정수. 프로젝트 기간에 포함되는 전체 스프린트의 개수
-        "sprint_duration": 정수. 스프린트가 진행되는 기간(일)
+        "sprint_days": 정수. 하나의 스프린트가 진행되는 기간(일)
         "sprints": [
             {{
-                "sprint_number": 정수. 스프린트의 번호. 해당 번호는 startDate가 가장 빠른 스프린트의 번호가 1이고, 그 이후 스프린트의 번호는 1씩 증가합니다.
-                "sprint_startDate": 문자열(YYYY-MM-DD). 스프린트가 시작되는 날짜
-                "sprint_endDate": 문자열(YYYY-MM-DD). 스프린트가 종료되는 날짜
+                "sprint_number": int,
+                "sprint_title": "string",
+                "sprint_description": "string",
+                "sprint_startDate": str(YYYY-MM-DD),
+                "sprint_endDate": str(YYYY-MM-DD),
                 "epic_titles": ["epic_title_01", "epic_title_02", "epic_title_03"]
             }},
             ...
@@ -230,62 +282,121 @@ async def create_sprint(project_id: str) -> List[Dict[str, Any]]:
     
     # GPT가 정의한 Sprint 정보 검토
     try:
-        sprint_duration = gpt_result["sprint_duration"]
-        sprint_totalnum = gpt_result["number of sprints"]
+        sprint_days = gpt_result["sprint_days"]
+        sprint_totalnum = gpt_result["number_of_sprints"]
     except Exception as e:
-        logger.error("gpt_result로부터 field를 추출할 수 없음")
-    logger.info(f"sprint 한 주기: {sprint_duration}")  
-    logger.info(f"생성된 총 스프린트의 개수: {sprint_totalnum}")  
+        logger.error("gpt_result로부터 field를 추출할 수 없음", exc_info=True)
+        raise e
+    logger.info(f"⚙️ sprint 한 주기: {sprint_days}일")
+    logger.info(f"⚙️ 생성된 총 스프린트의 개수: {sprint_totalnum}개")
     
     sprints = gpt_result["sprints"]
+    #sprint_to_store = []
     for sprint in sprints:
         sprint_number = sprint["sprint_number"]
         sprint_startDate = sprint["sprint_startDate"]
         sprint_endDate = sprint["sprint_endDate"]
         epic_titles = sprint["epic_titles"]
-        logger.info(f"Sprint {sprint_number}의 시작일: {sprint_startDate}, 종료일: {sprint_endDate}, 포함된 Epic: {epic_titles}")
+        logger.info(f"⚙️ Sprint {sprint_number}의 시작일: {sprint_startDate}, 종료일: {sprint_endDate}, 포함된 Epic: {epic_titles}")
+        #sprint_data = {
+        #    "sprintNumber": sprint_number,
+        #    "sprintStartDate": sprint_startDate,
+        #    "sprintEndDate": sprint_endDate,
+        #    "epicTitles": epic_titles
+        #}
+    #try:
+    #    await save_to_redis(f"sprint:{project_id}", sprint_to_store)
+    #except Exception as e:
+    #    logger.error(f"Redis에 Sprint 데이터 저장 중 오류 발생: {e}", exc_info=True)
+    #    raise e
     
+    try:
+        project = await project_collection.find_one({"_id": project_id})
+        logger.info("✅ 효율적인 작업일수 계산을 위해 프로젝트 정보를 조회합니다.")
+    except Exception as e:
+        logger.error(f"MongoDB에서 Project 정보 로드 중 오류 발생: {e}", exc_info=True)
+        raise e
     
-    project = project_collection.find_one({"projectId": project_id})
     #### sprint duration에 따른 expected_workday 수정 (일->시간)
-    project_start_date =  datetime.strptime(project["startDate"], "%Y-%m-%d")
-    project_end_date =  datetime.strptime(project["endDate"], "%Y-%m-%d")
-    project_days = (project_end_date - project_start_date).days
+    try:
+        logger.info(f"프로젝트 시작일: {project['startDate']}, 프로젝트 종료일: {project['endDate']}")
+        project_start_date = project["startDate"] if isinstance(project["startDate"], datetime) else datetime.strptime(project["startDate"], "%Y-%m-%d")
+        project_end_date = project["endDate"] if isinstance(project["endDate"], datetime) else datetime.strptime(project["endDate"], "%Y-%m-%d")
+        project_days = (project_end_date - project_start_date).days
+    except Exception as e:
+        logger.error(f"프로젝트 기간 계산 중 오류 발생: {e}", exc_info=True)
+        raise e
+    
     if project_days <= 90:
-        sprint_weeks = 3
+        logger.info("프로젝트 기간이 90일 이하입니다. 주 5일 근무, 1일 8시간 개발, 총 주차별 40시간 작업으로 계산합니다.")
+        workhours_per_day = 8
     elif project_days <= 180 and project_days > 90:
-        sprint_weeks = 6
+        logger.info("프로젝트 기간이 180일 이하입니다. 주 5일 근무, 1일 6시간 개발, 총 주차별 30시간 작업으로 계산합니다.")
+        workhours_per_day = 6
     elif project_days <= 270 and project_days > 180:
-        sprint_weeks = 9
+        logger.info("프로젝트 기간이 270일 이하입니다. 주 5일 근무, 1일 4시간 개발, 총 주차별 20시간 작업으로 계산합니다.")
+        workhours_per_day = 4
     elif project_days <= 365 and project_days > 270:
-        sprint_weeks = 12
+        logger.info("프로젝트 기간이 365일 이하입니다. 주 5일 근무, 1일 2시간 개발, 총 주차별 10시간 작업으로 계산합니다.")
+        workhours_per_day = 2
     else:
-        sprint_weeks = 12
+        logger.info("프로젝트 기간이 365일 초과입니다. 주 5일 근무, 1일 1시간 개발, 총 주차별 5시간 작업으로 계산합니다.")
+        workhours_per_day = 1
     
-    
-    # Sprint Capacity 계산
+    ### Sprint Capacity 계산
     efficiency_factor = 0.6
-    number_of_developers = len(project["userIds"])
-    sprint_weeks = 3
-    workhours_per_week = 40
-    eff_mandays = calculate_eff_mandays(efficiency_factor, number_of_developers, sprint_weeks, workhours_per_week)
+    number_of_developers = len(project["memberIds"])
+    eff_mandays = await calculate_eff_mandays(efficiency_factor, number_of_developers, sprint_days, workhours_per_day)
     
-    print(f"Sprint의 효율적인 일수: {eff_mandays}")
+    ### workhours_per_day를 기준으로 각 task의 예상 작업 시간 재조정
+    #features = await load_from_redis(f"features:{project_id}")
+    #epics = await load_from_redis(f"epic:{project_id}")
     
-    # Sprint의 effective mandays를 초과하지 않도록 Epic과 하위 Task를 배치 (expected_days를 기준으로 초과 여부 평가)
+    print(f"현재 features: {features}")
+    print(f"현재 epics: {epics}")
     
+    for feature in features:
+        feature["expected_days"] *= 0.5 * (workhours_per_day/2)
+        logger.info(f"✅ {feature['name']}의 재조정된 예상 작업시간: {feature['expected_days']}")
     
+    ### 최종적으로 구성된 eff_mandays 내부에 sprint별로 포함된 task들의 '재조정된 기능별 예상 작업시간'의 총합이 들어오는지 확인
+    modified_feat_expected_days = 0
+    for sprint in sprints:
+        epic_titles = sprint["epic_titles"]
+        for epic in epics:
+            if epic["epicTitle"] in epic_titles:
+                for feature in features:
+                    if feature["featureId"] in epic["featureIds"]:
+                        logger.info(f"✅ {feature['name']}이 {epic['epicTitle']}에 속합니다.")
+                        modified_feat_expected_days += feature["expected_days"]
+    if eff_mandays < modified_feat_expected_days:
+        logger.error(f"⚠️ 최종적으로 구성된 eff_mandays 내부에 sprint별로 포함된 task들의 '재조정된 기능별 예상 작업시간'의 총합이 들어오지 않습니다. eff_mandays: {eff_mandays}, modified_feat_expected_days: {modified_feat_expected_days}")
+        raise Exception(f"⚠️ 최종적으로 구성된 eff_mandays 내부에 sprint별로 포함된 task들의 '재조정된 기능별 예상 작업시간'의 총합이 들어오지 않습니다. eff_mandays: {eff_mandays}, modified_feat_expected_days: {modified_feat_expected_days}")
     
-    
-    return True
-
-
-async def calculate_eff_mandays(efficiency_factor:float, number_of_developers:int, sprint_weeks: int, workhours_per_week: int) -> float:
-
-    mandays = number_of_developers * sprint_weeks * workhours_per_week
-    eff_mandays = mandays * efficiency_factor
-    
-    return eff_mandays
+    # API 응답 반환
+    response = [
+        {
+            "sprint": [
+                {
+                    "title": sprint["sprint_title"],
+                    "description": sprint["sprint_description"],
+                    "startDate": sprint["sprint_startDate"],
+                    "endDate": sprint["sprint_endDate"]
+                }
+                for sprint in sprints
+            ],
+            "epics": [
+                {
+                    "title": epic["epicTitle"],
+                    "description": epic["epicDescription"],
+                    "featureIds": epic["featureIds"]
+                }
+                for epic in epics
+            ],
+        }
+    ]
+    logger.info(f"👉 API 응답 결과: {response}")
+    return response
     
 if __name__ == "__main__":
-    asyncio.run(create_epic())
+    asyncio.run(create_sprint())
