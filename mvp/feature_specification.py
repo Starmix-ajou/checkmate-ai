@@ -76,7 +76,7 @@ def calculate_priority(expected_days: int, difficulty: int) -> int:
 ### ======== Create Feature Specification ======== ###
 async def create_feature_specification(email: str) -> Dict[str, Any]:
     # /project/specification에서 참조하는 변수 초기화
-    stacks=[]
+    #stacks=[]
     project_members=[]
     
     # 프로젝트 정보 조회
@@ -151,11 +151,11 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
             if profile_project_id == projectId:
                 print(f"프로젝트 아이디 일치: {projectId}")
                 
-                try:
-                    stacks = profile.get("stacks", [])
-                except Exception as e:
-                    logger.error(f"profile stacks 접근 중 오류 발생: {str(e)}")
-                    continue
+                #try:
+                #    stacks = profile.get("stacks", [])
+                #except Exception as e:
+                #    logger.error(f"profile stacks 접근 중 오류 발생: {str(e)}")
+                #    continue
 
                 try:
                     positions = profile.get("positions", [])
@@ -168,7 +168,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
                     member_info = [
                         name,
                         position,
-                        ", ".join(profile.get("stacks", []))
+                        #, ".join(profile.get("stacks", []))
                     ]
                     project_members.append(", ".join(str(item) for item in member_info))
                 except Exception as e:
@@ -180,10 +180,10 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
             feature_data = json.loads(feature_data)
     except Exception as e:
         logger.error(f"🚨 features 접근 중 오류 발생: {str(e)}")
-        raise Exception(f"🚨 features 접근 중 오류 발생: {str(e)}") from e
+        raise Exception(f"🚨 features 접근 중 오류 발생: x{str(e)}") from e
     
     print("\n=== 불러온 프로젝트 정보 ===")
-    print("스택:", stacks)
+    #print("스택:", stacks)
     print("멤버:", project_members)
     print("기능 목록:", feature_data)
     print("시작일:", project_start_date)
@@ -196,9 +196,6 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     다음 기능 정의서와 프로젝트 스택 정보, 프로젝트에 참여하는 멤버 정보를 분석하여 
     각 기능별로 상세 명세를 작성하고, 필요한 정보를 지정해주세요.
     절대 주석을 추가하지 마세요. 당신은 한글이 주언어입니다.
-    
-    프로젝트 개발에 사용되는 스택:
-    {stacks}
     
     프로젝트 멤버별 [이름, 역할, 스택]를 융합한 리스트:
     {project_members}
@@ -235,7 +232,6 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
                 "output": "기능의 출력 결과",
                 "precondition": "기능 실행 전 만족해야 할 조건",
                 "postcondition": "기능 실행 후 보장되는 조건",
-                "stack": ["프로젝트에 포함된 스택 중 사용 가능한 스택1", "프로젝트에 포함된 스택 중 사용 가능한 스택2"],
                 "expected_days": 정수,
                 "startDate": "YYYY-MM-DD",
                 "endDate": "YYYY-MM-DD",
@@ -247,7 +243,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     
     # 프롬프트에 데이터 전달
     message = prompt.format_messages(
-        stacks=stacks,
+        #stacks=stacks,
         project_members=project_members,
         feature_data=feature_data,
         startDate=project_start_date,
@@ -289,7 +285,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
                 "output": data["output"],
                 "precondition": data["precondition"],
                 "postcondition": data["postcondition"],
-                "stack": data["stack"],
+                #"stack": data["stack"],
                 "priority": calculate_priority(data["expected_days"], data["difficulty"]),
                 "relfeatIds": [],
                 "embedding": [],
@@ -355,7 +351,7 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
     
     # 프로젝트 멤버와 스택 정보 추출    # 🚨 Project Members와 Stacks는 변경될 수 있음
     project_members = []
-    stacks = []
+    #stacks = []
     
     for member in project_data.get("members", []):
         try:
@@ -363,12 +359,12 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
             profiles = member.get("profiles", [])
             for profile in profiles:
                 if profile.get("projectId") == project_data.get("projectId"):
-                    stacks.extend(profile.get("stacks", []))
+                    #stacks.extend(profile.get("stacks", []))
                     position = profile.get("positions", [])[0] if profile.get("positions") else ""
                     member_info = [
                         name,
                         position,
-                        ", ".join(profile.get("stacks", []))
+                        #", ".join(profile.get("stacks", []))
                     ]
                     project_members.append(", ".join(str(item) for item in member_info))
         except Exception as e:
@@ -380,7 +376,7 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
     logger.info(f"project_start_date: {project_start_date}")
     logger.info(f"project_end_date: {project_end_date}")
     logger.info(f"project_members: {project_members}")
-    logger.info(f"stacks: {stacks}")
+    #logger.info(f"stacks: {stacks}")
     logger.info(f"current_features: {current_features}")
     
     prev_feat_num = len(current_features)
@@ -431,9 +427,7 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
     {endDate}
     3. 프로젝트 멤버별 [이름, 역할, 스택]:
     {project_members}
-    4. 프로젝트에서 사용 중인 스택:
-    {stacks}
-    5. 프로젝트에 현재 포함되어 있는 기능 목록:
+    4. 프로젝트에 현재 포함되어 있는 기능 목록:
     {current_features}
     
     사용자 피드백:
@@ -472,7 +466,6 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
                 "output": "출력 결과",
                 "precondition": "기능 실행 전 만족해야 할 조건",
                 "postcondition": "기능 실행 후 보장되는 조건",
-                "stack": ["스택1", "스택2"],
                 "expected_days": 정수,
                 "startDate": "YYYY-MM-DD로 정의되는 기능 시작일",
                 "endDate": "YYYY-MM-DD로 정의되는 기능 종료일"
@@ -488,7 +481,7 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
         endDate=project_end_date,
         current_features=current_features,
         project_members=project_members,
-        stacks=stacks,
+        #stacks=stacks,
         feedback=feedback,
     )
     
@@ -532,14 +525,14 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
         for feature in feature_list:
             required_fields = [
                 "_id", "name", "useCase", "input", "output", "precondition", "postcondition",
-                "stack", "expected_days", "startDate", "endDate", "difficulty", "priority"
+                "expected_days", "startDate", "endDate", "difficulty", "priority"
             ]
             for field in required_fields:
                 if field not in feature:
                     raise ValueError(f"기능 '{feature.get('name', 'unknown')}'에 '{field}' 필드가 누락되었습니다.")
             
-            if not isinstance(feature["stack"], list):
-                raise ValueError(f"기능 '{feature['name']}'의 stack 형식이 잘못되었습니다.")
+            #if not isinstance(feature["stack"], list):
+            #    raise ValueError(f"기능 '{feature['name']}'의 stack 형식이 잘못되었습니다.")
             
             if not isinstance(feature["expected_days"], int) or feature["expected_days"] <= 0:
                 raise ValueError(f"기능 '{feature['name']}'의 expected_days는 양의 정수여야 합니다.")
@@ -578,7 +571,6 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
 #                 "output": updated["output"],
 #                 "precondition": updated["precondition"],
 #                 "postcondition": updated["postcondition"],
-#                 "stack": updated["stack"],
 #                 "expected_days": updated["expected_days"],
 #                 "startDate": updated["startDate"],
 #                 "endDate": updated["endDate"],
@@ -639,7 +631,7 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
                     "output": feat["output"],
                     "precondition": feat["precondition"],
                     "postcondition": feat["postcondition"],
-                    "stack": feat["stack"],
+                    #"stack": feat["stack"],
                     "expected_days": feat["expected_days"],
                     "startDate": feat["startDate"],
                     "endDate": feat["endDate"],
@@ -675,3 +667,106 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
     }
     logger.info(f"👉 API 응답 결과: {response}")
     return response
+
+### epic을 생성하는 로직을 PUT specification 단계에서 진행
+async def create_epic(project_id: str) -> int:
+    """
+    DB에서 프로젝트 명세 정보를 조회하여 각 기능을 하나의 task로 변환하고, 이를 묶어서 epic을 정의합니다.
+    
+    Args:
+        project_id (str): 개발 프로젝트의 ID (DB 조회 목적)
+        
+    Returns:
+        Dict[str, Any]: epic 정의 정보
+    """
+    try:
+        features = await feature_collection.find({"projectId": project_id}).to_list(length=None)
+    except Exception as e:
+        logger.error(f"MongoDB에서 Features 정보 로드 중 오류 발생: {e}", exc_info=True)
+        raise e
+    print(f"features로부터 epic 생성을 시작합니다.\nfeatures: {features}")
+    
+    epic_prompt = ChatPromptTemplate.from_template("""
+    당신은 애자일 마스터입니다. 당신의 주요 언어는 한국어입니다. 당신의 업무는 비슷한 task들을 묶어서 epic을 정의하는 것입니다.
+    이때 지켜야 하는 규칙이 있습니다. 
+    1. 각 epic은 반드시 하나 이상의 task를 포함해야 합니다.
+    2. epic의 이름을 자연어로 정의해 주세요. 이름은 epic이 포함하는 task들의 성격을 반영해야 합니다.
+    3. 비기능과 관련된 task가 존재할 경우 비기능과 관련된 task를 묶어서 "nonFunctional" epic으로 정의해 주세요.
+    4. 당신에게 주어지는 feature는 task와 1:1로 대응됩니다. 즉, features의 수만큼 tasks가 존재해야 합니다.
+    5. 기능 Id, 기능 이름, 담당자 등 기능과 관련된 내용을 절대로 수정하거나 삭제하지 마세요.
+    6. 모든 task는 소속된 epic이 존재해야 하고, 두 개 이상의 epic에 소속될 수 없습니다. 중복되는 task가 존재할 경우 더 적합한 epic을 평가한 후 소속 epic을 하나로 결정해 주세요.
+    7. startDate와 endDate는 문자열(YYYY-MM-DD) 형식으로 반환하고, epic의 날짜들은 각 epic이 포함하는 task의 날짜들을 사용하여 정의해야 합니다.
+    
+    결과를 다음과 같은 형식으로 반환해 주세요.
+    {{{{
+        "number_of_epics": 정수
+        "epics": [
+            {{
+                "epic_title": "epic의 이름",
+                "epic_description": "epic에 대한 간략한 설명",
+                "featureIds": ["id_013", "id_002", "id_010"],
+                "epic_startDate": 문자열(YYYY-MM-DD). epic의 시작 날짜이며 포함하는 task 중에 가장 startDate가 빠른 task의 startDate와 같아야 합니다.
+                "epic_endDate": 문자열(YYYY-MM-DD). epic의 종료 날짜이며 포함하는 task 중에 가장 endDate가 늦은 task의 endDate와 같아야 합니다.
+            }},
+            ...
+        ]
+    }}}}
+    
+    현재 기능 정보:
+    {features}
+    """)
+    
+    messages = epic_prompt.format_messages(
+        features=features
+    )
+    
+    # LLM Config
+    llm = ChatOpenAI(
+        model_name="gpt-4o-mini",
+        temperature=0.6,
+    )
+    response = await llm.ainvoke(messages)
+
+    try:
+        content = response.content
+        try:
+            gpt_result = extract_json_from_gpt_response(content)
+        except Exception as e:
+            logger.error(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True)
+            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True) from e
+        
+    except Exception as e:
+        logger.error(f"GPT API 처리 중 오류 발생: {e}", exc_info=True)
+        raise Exception(f"GPT API 처리 중 오류 발생: {str(e)}", exc_info=True) from e
+    
+    epic_to_store = []
+    epics = gpt_result["epics"]
+    logger.info("⚙️ gpt가 반환한 결과로부터 epic 정보를 추출합니다.")
+    for epic in epics:
+        epic_title = epic["epic_title"]
+        epic_description = epic["epic_description"]
+        feature_ids = epic["featureIds"]
+        epic_startDate = epic["epic_startDate"]
+        epic_endDate = epic["epic_endDate"]
+        
+        print(f"Epic Title: {epic_title}")
+        print(f"Epic Description: {epic_description}")
+        print(f"Feature Ids: {feature_ids}")
+        print(f"Epic Start Date: {epic_startDate}")
+        print(f"Epic End Date: {epic_endDate}")
+        
+        epic_data = {
+            "epicTitle": epic_title,
+            "epicDescription": epic_description,
+            "epicStartDate": epic_startDate,
+            "epicEndDate": epic_endDate,
+            "featureIds": feature_ids
+        }
+        epic_to_store.append(epic_data)
+    
+    try:
+        await epic_collection.insert_many(epic_to_store)
+    except Exception as e:
+        logger.error(f"epic collection에 데이터 저장 중 오류 발생: {e}", exc_info=True)
+        raise e
+    return epic_to_store
