@@ -13,4 +13,4 @@ RUN pip install -r requirements.txt
 # PYTHONPATH 설정
 ENV PYTHONPATH=/mvp
 
-CMD ["uvicorn", "serve:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "serve:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "180"]
