@@ -3,7 +3,6 @@ import json
 import logging
 import math
 import os
-from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
@@ -14,7 +13,7 @@ from mongodb_setting import (get_epic_collection, get_feature_collection,
                              get_project_collection, get_task_collection,
                              get_user_collection)
 from openai import AsyncOpenAI
-from redis_setting import load_from_redis, save_to_redis
+from project_member_utils import get_project_members
 
 logger = logging.getLogger(__name__)
 
@@ -47,19 +46,17 @@ async def calculate_eff_mandays(efficiency_factor: float, number_of_developers: 
 ########## =================== Create Task ===================== ##########
 ### feature에 epicId가 추가되었으므로 epic별로 task를 정의
 ### 이때 task는 title, description, assignee, startDate, endDate, priority, expected_workhours, epicId를 포함해야 함.
-async def create_task(project_id: str, epic_id: str) -> List[Dict[str, Any]]:
+async def create_task(epic_id: str, feature_id: str) -> List[Dict[str, Any]]:
     await init_collections()
-    logger.info(f"🔍 task 정의 시작: {epic_id}")
+    logger.info(f"🔍 task 정의 시작: {feature_id}")
     try:
-        feature = await feature_collection.find_one({"epicId": epic_id})
+        feature = await feature_collection.find_one({"featureId": feature_id})
     except Exception as e:
-        logger.error(f"MongoDB에서 epic(epicId: {epic_id}) 정보 로드 중 오류 발생: {e}", exc_info=True)
+        logger.error(f"MongoDB에서 featureId: {feature_id}에 해당하는 feature 정보 로드 중 오류 발생: {e}", exc_info=True)
         raise e
     
-    print(f"[DEBUG] epic_id: {epic_id}")
-    print(f"[DEBUG] features keys: {feature['epicId']}")
     if feature is None:
-        raise ValueError(f"Feature not found for epic_id={epic_id}")
+        raise ValueError(f"Feature not found for feature_id={feature_id}")
     epic = feature
     
     task_creation_prompt = ChatPromptTemplate.from_template("""
@@ -167,52 +164,52 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
     
     ### ===== project_members를 "global"로 선언함 ===== ####
     global project_members
-    project_members = []
-    try:
-        project_data = await project_collection.find_one({"_id": project_id})
-        if not project_data:
-            logger.error(f"projectId {project_id}에 해당하는 프로젝트를 찾을 수 없습니다.")
-            raise Exception(f"projectId {project_id}에 해당하는 프로젝트를 찾을 수 없습니다.")
-        
-        logger.info(f"프로젝트 데이터: {project_data}")
-        
-        members = project_data.get("members", [])
-        assert len(members) > 0, "members가 없습니다."
-        
-        # user_collection 직접 초기화 (local variable이라고 찾을 수 없는 문제가 발생함)
-        user_collection = await get_user_collection()
-        for member_ref in members:
-            try:
-                # DBRef에서 실제 사용자 정보 조회
-                user_id = member_ref.id
-                user_info = await user_collection.find_one({"_id": user_id})
-                if not user_info:
-                    logger.warning(f"⚠️ 사용자 정보를 찾을 수 없습니다: {user_id}")
-                    continue
-                
-                name = user_info.get("name")
-                assert name is not None, "name이 없습니다."
-                profiles = user_info.get("profiles", [])
-                assert len(profiles) > 0, "profile이 없습니다."
-                for profile in profiles:
-                    if profile.get("projectId") == project_id:
-                        logger.info(f">> projectId가 일치하는 profile이 존재함: {name}")
-                        positions = profile.get("positions", [])
-                        assert len(positions) > 0, "position이 없습니다."
-                        positions_str = ", ".join(positions)  # positions 리스트를 쉼표로 구분된 문자열로 변환
-                        member_info = [name, positions_str]
-                        project_members.append(member_info)
-                        logger.info(f"추가된 멤버: {name}, {positions}")
-            except Exception as e:
-                logger.error(f"멤버 정보 처리 중 오류 발생: {str(e)}", exc_info=True)
-                continue
-    
-    except Exception as e:
-        logger.error(f"MongoDB에서 Project 정보 로드 중 오류 발생: {e}", exc_info=True)
-        raise e
-    
-    logger.info(f"📌 project_members: {project_members}")
-    assert len(project_members) > 0, "project_members가 비어있습니다."
+    user_collection = await get_user_collection()
+    project_members = await get_project_members(project_id, project_collection, user_collection)
+    #project_members = []
+    #try:
+    #    project_data = await project_collection.find_one({"_id": project_id})
+    #    if not project_data:
+    #        logger.error(f"projectId {project_id}에 해당하는 프로젝트를 찾을 수 없습니다.")
+    #        raise Exception(f"projectId {project_id}에 해당하는 프로젝트를 찾을 수 없습니다.")
+    #    
+    #    logger.info(f"프로젝트 데이터: {project_data}")
+    #    
+    #    members = project_data.get("members", [])
+    #    assert len(members) > 0, "members가 없습니다."
+    #    
+    #    # user_collection 직접 초기화 (local variable이라고 찾을 수 없는 문제가 발생함)
+    #    user_collection = await get_user_collection()
+    #    for member_ref in members:
+    #        try:
+    #            # DBRef에서 실제 사용자 정보 조회
+    #            user_id = member_ref.id
+    #            user_info = await user_collection.find_one({"_id": user_id})
+    #           if not user_info:
+    #                logger.warning(f"⚠️ 사용자 정보를 찾을 수 없습니다: {user_id}")
+    #                continue
+    #             name = user_info.get("name")
+    #            assert name is not None, "name이 없습니다."
+    #            profiles = user_info.get("profiles", [])
+    #            assert len(profiles) > 0, "profile이 없습니다."
+    #        for profile in profiles:
+    #            if profile.get("projectId") == project_id:
+    #                logger.info(f">> projectId가 일치하는 profile이 존재함: {name}")
+    #                positions = profile.get("positions", [])
+    #            assert len(positions) > 0, "position이 없습니다."
+    #            positions_str = ", ".join(positions)  # positions 리스트를 쉼표로 구분된 문자열로 변환
+    #            member_info = [name, positions_str]
+    #            project_members.append(member_info)
+    #            logger.info(f"추가된 멤버: {name}, {positions}")
+    #        except Exception as e:
+    #            logger.error(f"멤버 정보 처리 중 오류 발생: {str(e)}", exc_info=True)
+    #            continue
+    #except Exception as e:
+    #    logger.error(f"MongoDB에서 Project 정보 로드 중 오류 발생: {e}", exc_info=True)
+    #    raise e
+    #
+    #logger.info(f"📌 project_members: {project_members}")
+    #assert len(project_members) > 0, "project_members가 비어있습니다."
     
     tasks = []
     for epic in epics:
@@ -231,7 +228,8 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
         try:
             if len(task_db_data) == 0:
                 logger.info(f"❌ epic {epic_id}의 task 정보가 없습니다. 새로운 task 정보를 생성합니다.")
-                task_creation_result = await create_task(project_id, epic_id)  # 여기에서 epic collection에 들어있는 epic 정보들로부터 각 epic에 속한 task들을 정의
+                feature_id = epic["featureId"]
+                task_creation_result = await create_task(epic_id, feature_id)  # 여기에서 epic collection에 들어있는 epic 정보들로부터 각 epic에 속한 task들을 정의
                 current_epic_tasks = task_creation_result
             else:
                 logger.info(f"✅ epic {epic_id}의 task 정보가 이미 존재합니다. 기존 task 정보를 사용합니다.")
@@ -514,6 +512,8 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
     user_collection = await get_user_collection()
     
     # DBRef에서 직접 ID 매핑 생성
+    project_data = await project_collection.find_one({"_id": project_id})
+    logger.info("🔍 프로젝트 멤버 name:id mapping 시작")
     for member_ref in project_data["members"]:
         try:
             user_id = member_ref.id
@@ -527,11 +527,13 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
                 logger.warning(f"⚠️ 사용자 이름이 없습니다: {user_id}")
                 continue
                 
-            name_to_id[name] = user_id
-            logger.info(f"✅ 사용자 매핑 성공 - 이름: {name}, ID: {user_id}")
+            # ObjectId를 문자열로 변환
+            name_to_id[name] = str(user_id)
+            logger.info(f"✅ 사용자 매핑 성공 - 이름: {name}, ID: {str(user_id)}")
         except Exception as e:
             logger.error(f"❌ 사용자 정보 처리 중 오류 발생: {str(e)}", exc_info=True)
             continue
+    logger.info(f"📌 생성된 name_to_id 매핑: {name_to_id}")
     
     if not name_to_id:
         raise Exception("사용자 정보를 찾을 수 없습니다. 프로젝트 멤버 정보를 확인해주세요.")
@@ -540,27 +542,35 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
     logger.info(f"📌 첫 번째 순서의 sprint만 추출 : {first_sprint}")
     first_sprint_epics = first_sprint["epics"]
     first_sprint_tasks = []
+    
+    # 태스크의 assignee 확인을 위한 디버깅 코드 추가
+    logger.info("🔍 태스크 assignee 확인 시작")
     for epic in first_sprint_epics:
-        logger.info(f"📌 첫 번째 순서의 sprint에 포함된 epic들의 Id: {epic['epicId']}")
+        #logger.info(f"📌 이번 sprint에 포함된 epic의 정보: {epic}")
         for task in epic["tasks"]:
-            logger.info(f"📌 첫 번째 순서의 sprint에 포함된 epic의 task들: {task['title']}")
+            #logger.info(f"📌 이번 sprint에 포함된 task의 정보: {task['title']}, 담당자: {task['assignee']}")
             # assignee가 name_to_id에 없는 경우 처리
             if task["assignee"] not in name_to_id:
-                logger.warning(f"⚠️ 할당된 사용자를 찾을 수 없습니다: {task['assignee']}")
-                continue
-            task["assignee"] = name_to_id[task["assignee"]]  # 이름을 ID로 변환
+                logger.warning(f"⚠️ 현재 매핑된 사용자 목록: {list(name_to_id.keys())}")
+                raise Exception(f"⚠️ {task['title']}의 담당자인 {task['assignee']}가 매핑된 name_to_id에 존재하지 않습니다.")
+            logger.info(f"✅ {task['title']}의 담당자인 {task['assignee']}가 매핑된 name_to_id에 존재합니다.")
+            try:
+                task["assignee"] = name_to_id[task["assignee"]]  # 이름을 ID로 변환
+                logger.info(f"✅ name을 id로 변환하였습니다. 현재 task의 assignee의 정보: {task['assignee']}")
+            except Exception as e:
+                logger.error(f"🚨 name을 id로 변환하는 데에 실패했습니다: {e}", exc_info=True)
+                raise e
             first_sprint_tasks.append(task)
     
     # API 응답 반환
     response = {
-        "sprint": [
-            {
-                "title": first_sprint["title"],
-                "description": first_sprint["description"],
-                "startDate": first_sprint["startDate"],
-                "endDate": first_sprint["endDate"]
-            }
-        ],
+        "sprint": 
+        {
+            "title": first_sprint["title"],
+            "description": first_sprint["description"],
+            "startDate": first_sprint["startDate"],
+            "endDate": first_sprint["endDate"]
+        },
         "epics": [
             {
                 "epicId": epic["epicId"],
@@ -568,7 +578,7 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
                     {
                         "title": task["title"],
                         "description": task["description"],
-                        "assignee": name_to_id[task["assignee"]],
+                        "assignee": task["assignee"],
                         "startDate": task["startDate"],
                         "endDate": task["endDate"],
                         "priority": task["priority"]
