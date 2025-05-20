@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from gpt_utils import extract_json_from_gpt_response
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-from mongodb_setting import get_feature_collection
+from mongodb_setting import get_epic_collection, get_feature_collection
 from openai import AsyncOpenAI
 from redis_setting import load_from_redis, save_to_redis
 
@@ -546,8 +546,8 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
     except Exception as e:
         logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True)
         raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True) from e
-    
-#     # 업데이트된 기능 정보를 기존 기능 리스트와 융합
+
+     # 업데이트된 기능 정보를 기존 기능 리스트와 융합
 #     updated_map = {feature["name"]: feature for feature in feature_list}
 #     merged_features = []
     
@@ -667,106 +667,3 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
     }
     logger.info(f"👉 API 응답 결과: {response}")
     return response
-
-### epic을 생성하는 로직을 PUT specification 단계에서 진행
-async def create_epic(project_id: str) -> int:
-    """
-    DB에서 프로젝트 명세 정보를 조회하여 각 기능을 하나의 task로 변환하고, 이를 묶어서 epic을 정의합니다.
-    
-    Args:
-        project_id (str): 개발 프로젝트의 ID (DB 조회 목적)
-        
-    Returns:
-        Dict[str, Any]: epic 정의 정보
-    """
-    try:
-        features = await feature_collection.find({"projectId": project_id}).to_list(length=None)
-    except Exception as e:
-        logger.error(f"MongoDB에서 Features 정보 로드 중 오류 발생: {e}", exc_info=True)
-        raise e
-    print(f"features로부터 epic 생성을 시작합니다.\nfeatures: {features}")
-    
-    epic_prompt = ChatPromptTemplate.from_template("""
-    당신은 애자일 마스터입니다. 당신의 주요 언어는 한국어입니다. 당신의 업무는 비슷한 task들을 묶어서 epic을 정의하는 것입니다.
-    이때 지켜야 하는 규칙이 있습니다. 
-    1. 각 epic은 반드시 하나 이상의 task를 포함해야 합니다.
-    2. epic의 이름을 자연어로 정의해 주세요. 이름은 epic이 포함하는 task들의 성격을 반영해야 합니다.
-    3. 비기능과 관련된 task가 존재할 경우 비기능과 관련된 task를 묶어서 "nonFunctional" epic으로 정의해 주세요.
-    4. 당신에게 주어지는 feature는 task와 1:1로 대응됩니다. 즉, features의 수만큼 tasks가 존재해야 합니다.
-    5. 기능 Id, 기능 이름, 담당자 등 기능과 관련된 내용을 절대로 수정하거나 삭제하지 마세요.
-    6. 모든 task는 소속된 epic이 존재해야 하고, 두 개 이상의 epic에 소속될 수 없습니다. 중복되는 task가 존재할 경우 더 적합한 epic을 평가한 후 소속 epic을 하나로 결정해 주세요.
-    7. startDate와 endDate는 문자열(YYYY-MM-DD) 형식으로 반환하고, epic의 날짜들은 각 epic이 포함하는 task의 날짜들을 사용하여 정의해야 합니다.
-    
-    결과를 다음과 같은 형식으로 반환해 주세요.
-    {{{{
-        "number_of_epics": 정수
-        "epics": [
-            {{
-                "epic_title": "epic의 이름",
-                "epic_description": "epic에 대한 간략한 설명",
-                "featureIds": ["id_013", "id_002", "id_010"],
-                "epic_startDate": 문자열(YYYY-MM-DD). epic의 시작 날짜이며 포함하는 task 중에 가장 startDate가 빠른 task의 startDate와 같아야 합니다.
-                "epic_endDate": 문자열(YYYY-MM-DD). epic의 종료 날짜이며 포함하는 task 중에 가장 endDate가 늦은 task의 endDate와 같아야 합니다.
-            }},
-            ...
-        ]
-    }}}}
-    
-    현재 기능 정보:
-    {features}
-    """)
-    
-    messages = epic_prompt.format_messages(
-        features=features
-    )
-    
-    # LLM Config
-    llm = ChatOpenAI(
-        model_name="gpt-4o-mini",
-        temperature=0.6,
-    )
-    response = await llm.ainvoke(messages)
-
-    try:
-        content = response.content
-        try:
-            gpt_result = extract_json_from_gpt_response(content)
-        except Exception as e:
-            logger.error(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True)
-            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True) from e
-        
-    except Exception as e:
-        logger.error(f"GPT API 처리 중 오류 발생: {e}", exc_info=True)
-        raise Exception(f"GPT API 처리 중 오류 발생: {str(e)}", exc_info=True) from e
-    
-    epic_to_store = []
-    epics = gpt_result["epics"]
-    logger.info("⚙️ gpt가 반환한 결과로부터 epic 정보를 추출합니다.")
-    for epic in epics:
-        epic_title = epic["epic_title"]
-        epic_description = epic["epic_description"]
-        feature_ids = epic["featureIds"]
-        epic_startDate = epic["epic_startDate"]
-        epic_endDate = epic["epic_endDate"]
-        
-        print(f"Epic Title: {epic_title}")
-        print(f"Epic Description: {epic_description}")
-        print(f"Feature Ids: {feature_ids}")
-        print(f"Epic Start Date: {epic_startDate}")
-        print(f"Epic End Date: {epic_endDate}")
-        
-        epic_data = {
-            "epicTitle": epic_title,
-            "epicDescription": epic_description,
-            "epicStartDate": epic_startDate,
-            "epicEndDate": epic_endDate,
-            "featureIds": feature_ids
-        }
-        epic_to_store.append(epic_data)
-    
-    try:
-        await epic_collection.insert_many(epic_to_store)
-    except Exception as e:
-        logger.error(f"epic collection에 데이터 저장 중 오류 발생: {e}", exc_info=True)
-        raise e
-    return epic_to_store
