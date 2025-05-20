@@ -47,6 +47,31 @@ class EpicPOSTRequest(BaseModel):
     projectId: str
     pendingTasksIds: Optional[List[str]] = None
 
+class FeatureDefinitionSuggestion(BaseModel):
+    features: List[str]
+    suggestions: List[dict]
+
+class CreateFeatureDefinitionResponse(BaseModel):
+    suggestion: FeatureDefinitionSuggestion
+
+class CreateFeatureSpecificationResponse(BaseModel):
+    features: List[Dict[str, Any]]
+
+class CreateSprintResponse(BaseModel):
+    sprint: Dict[str, Any]
+    epics: List[Dict[str, Any]]
+
+class FeedbackFeatureDefinitionResponse(BaseModel):
+    features: List[str]
+    isNextStep: bool
+
+class FeedbackFeatureSpecificationResponse(BaseModel):
+    features: List[Dict[str, Any]]
+    isNextStep: bool
+
+class CreateSprintResponse(BaseModel):
+    sprint: Dict[str, Any]
+    epics: List[Dict[str, Any]]
 
 app = FastAPI(docs_url="/docs")
 
@@ -73,7 +98,7 @@ async def global_error_handler(request: Request, exc: Exception):
     )
 
 # API Mapping
-@app.post("/project/definition", response_model=Dict[str, Any])
+@app.post("/project/definition", response_model=CreateFeatureDefinitionResponse)
 async def post_definition(request: FeatureDefinitionPOSTRequest):
     try:
         logger.info(f"📨 POST /definition 요청 수신: {request}")
@@ -87,7 +112,7 @@ async def post_definition(request: FeatureDefinitionPOSTRequest):
             detail=f"기능 정의서 생성 중 오류 발생: {str(e)}"
         )
 
-@app.put("/project/definition", response_model=Dict[str, Any])
+@app.put("/project/definition", response_model=FeedbackFeatureDefinitionResponse)
 async def put_definition(request: FeatureDefinitionPUTRequest):
     try:
         logger.info(f"📨 PUT /definition 요청 수신: {request}")
@@ -101,7 +126,7 @@ async def put_definition(request: FeatureDefinitionPUTRequest):
             detail=f"기능 정의서 업데이트 중 오류 발생: {str(e)}"
         )
     
-@app.post("/project/specification", response_model=Dict[str, Any])
+@app.post("/project/specification", response_model=CreateFeatureSpecificationResponse)
 async def post_specification(request: FeatureSpecificationPOSTRequest):
     try:
         logger.info(f"📨 POST /specification 요청 수신: {request}")
@@ -115,7 +140,7 @@ async def post_specification(request: FeatureSpecificationPOSTRequest):
             detail=f"기능 명세서 생성 중 오류 발생: {str(e)}"
         )
 
-@app.put("/project/specification", response_model=Dict[str, Any])
+@app.put("/project/specification", response_model=FeedbackFeatureSpecificationResponse)
 async def put_specification(request: FeatureSpecificationPUTRequest):
     try:
         logger.info(f"📨 PUT /specification 요청 수신: {request}")
@@ -129,7 +154,7 @@ async def put_specification(request: FeatureSpecificationPUTRequest):
             detail=f"기능 명세서 업데이트 중 오류 발생: {str(e)}"
         )
 
-@app.post("/sprint", response_model=Dict[str, Any])
+@app.post("/sprint", response_model=CreateSprintResponse)
 async def post_epic(request: EpicPOSTRequest):
     try:
         logger.info(f"📨 POST /sprint 요청 수신: {request}")
