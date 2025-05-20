@@ -14,12 +14,18 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 MONGODB_URI = os.getenv('MONGODB_URI')
 DB_NAME = os.getenv('DB_NAME')
 
-logger.info(f"MongoDB 연결 설정: uri={MONGODB_URI}, db={DB_NAME}")
+MOCK_MONGODB_URI = "mongodb://localhost:27017"
+MOCK_DB_NAME = "checkmate"
 
 mongo_client = AsyncIOMotorClient(MONGODB_URI)
 db = mongo_client[DB_NAME]
 
+mock_mongo_client = AsyncIOMotorClient(MOCK_MONGODB_URI)
+mock_db = mock_mongo_client[MOCK_DB_NAME]
+
 async def test_mongodb_connection():
+    #logger.info(f"MongoDB 연결 설정: uri={MONGODB_URI}, db={DB_NAME}")
+    #logger.info(f"Mock MongoDB 연결 설정: uri={MOCK_MONGODB_URI}, db={MOCK_DB_NAME}")
     try:
         pong = await mongo_client.admin.command('ping')
         print(f"MongoDB 연결 성공: {pong}")
@@ -32,19 +38,24 @@ async def test_mongodb_connection():
     
 async def get_feature_collection():
     print("⚙️ get_feature_collection 호출")
-    return db['features']
+    return mock_db['features']
 
 async def get_epic_collection():
     print("⚙️ get_epic_collection 호출")
-    return db['epics']
+    return mock_db['epics']
 
 async def get_task_collection():
     print("⚙️ get_task_collection 호출")
-    return db['tasks']
+    return mock_db['tasks']
 
 async def get_project_collection():
     print("⚙️ get_project_collection 호출")
-    return db['projects']
+    return mock_db['projects']
+
+async def get_user_collection():
+    print("⚙️ get_user_collection 호출")
+    return mock_db['users']
+
 
 if __name__ == "__main__":
     print(MONGODB_URI)
