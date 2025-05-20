@@ -12,8 +12,10 @@ from dotenv import load_dotenv
 from gpt_utils import extract_json_from_gpt_response
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-from mongodb_setting import get_epic_collection, get_feature_collection
+from mongodb_setting import (get_feature_collection, get_project_collection,
+                             get_user_collection)
 from openai import AsyncOpenAI
+from project_member_utils import get_project_members
 from redis_setting import load_from_redis, save_to_redis
 
 logger = logging.getLogger(__name__)
@@ -23,7 +25,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-feature_collection = get_feature_collection()
+
 
 def assign_featureId(feature: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -42,12 +44,12 @@ def assign_featureId(feature: Dict[str, Any]) -> Dict[str, Any]:
     return feature
 
 
-def calculate_priority(expected_days: int, difficulty: int) -> int:
+def calculate_priority(expectedDays: int, difficulty: int) -> int:
     """
     개발 예상 시간과 난이도를 기반으로 우선순위를 계산합니다.
     
     Args:
-        expected_days (int): 개발 예상 시간
+        expectedDays (int): 개발 예상 시간
         difficulty (int): 개발 난이도
         
     Returns:
@@ -59,7 +61,7 @@ def calculate_priority(expected_days: int, difficulty: int) -> int:
     difficulty_weight = 0.4
     
     # 정규화된 시간 점수 (시간이 짧을수록 점수가 높음)
-    time_score = 1 - (expected_days / 30)  # 30일을 최대치로 가정
+    time_score = 1 - (expectedDays / 30)  # 30일을 최대치로 가정
         
     # 정규화된 난이도 점수 (난이도가 낮을수록 점수가 높음)
     difficulty_score = 1 - ((difficulty - 1) / 4)
@@ -119,61 +121,12 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     print(f"프로젝트 아이디: {projectId}")
     
     try:
-        members = project_data.get("members", [])
+        user_collection = await get_user_collection()
+        project_collection = await get_project_collection()
+        project_members = await get_project_members(projectId, project_collection, user_collection)
     except Exception as e:
-        logger.error(f"members 접근 중 오류 발생: {str(e)}")
+        logger.error(f"프로젝트 멤버 정보 처리 중 오류 발생: {str(e)}", exc_info=True)
         raise
-
-    for member in members:
-        try:
-            name = member.get("name")
-        except Exception as e:
-            logger.error(f"member name 접근 중 오류 발생: {str(e)}")
-            continue
-
-        print(f"멤버 이름: {name}")
-        
-        try:
-            profiles = member.get("profiles", [])
-        except Exception as e:
-            logger.error(f"member profiles 접근 중 오류 발생: {str(e)}")
-            continue
-
-        print(f"멤버 프로필: {profiles}")
-        
-        for profile in profiles:
-            try:
-                profile_project_id = profile.get("projectId")
-            except Exception as e:
-                logger.error(f"profile projectId 접근 중 오류 발생: {str(e)}")
-                continue
-
-            if profile_project_id == projectId:
-                print(f"프로젝트 아이디 일치: {projectId}")
-                
-                #try:
-                #    stacks = profile.get("stacks", [])
-                #except Exception as e:
-                #    logger.error(f"profile stacks 접근 중 오류 발생: {str(e)}")
-                #    continue
-
-                try:
-                    positions = profile.get("positions", [])
-                    position = positions[0] if positions else ""
-                except Exception as e:
-                    logger.error(f"profile positions 접근 중 오류 발생: {str(e)}")
-                    continue
-
-                try:
-                    member_info = [
-                        name,
-                        position,
-                        #, ".join(profile.get("stacks", []))
-                    ]
-                    project_members.append(", ".join(str(item) for item in member_info))
-                except Exception as e:
-                    logger.error(f"member_info 생성 중 오류 발생: {str(e)}")
-                    continue
 
     try:
         if isinstance(feature_data, str):
@@ -232,7 +185,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
                 "output": "기능의 출력 결과",
                 "precondition": "기능 실행 전 만족해야 할 조건",
                 "postcondition": "기능 실행 후 보장되는 조건",
-                "expected_days": 정수,
+                "expectedDays": 정수,
                 "startDate": "YYYY-MM-DD",
                 "endDate": "YYYY-MM-DD",
                 "difficulty": 1
@@ -285,13 +238,12 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
                 "output": data["output"],
                 "precondition": data["precondition"],
                 "postcondition": data["postcondition"],
-                #"stack": data["stack"],
-                "priority": calculate_priority(data["expected_days"], data["difficulty"]),
+                "priority": calculate_priority(data["expectedDays"], data["difficulty"]),
                 "relfeatIds": [],
                 "embedding": [],
                 "startDate": data["startDate"],
                 "endDate": data["endDate"],
-                "expected_days": data["expected_days"],
+                "expectedDays": data["expectedDays"],
                 "difficulty": data["difficulty"]
             }
             feature = assign_featureId(feature)
@@ -359,12 +311,10 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
             profiles = member.get("profiles", [])
             for profile in profiles:
                 if profile.get("projectId") == project_data.get("projectId"):
-                    #stacks.extend(profile.get("stacks", []))
                     position = profile.get("positions", [])[0] if profile.get("positions") else ""
                     member_info = [
                         name,
                         position,
-                        #", ".join(profile.get("stacks", []))
                     ]
                     project_members.append(", ".join(str(item) for item in member_info))
         except Exception as e:
@@ -466,7 +416,7 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
                 "output": "출력 결과",
                 "precondition": "기능 실행 전 만족해야 할 조건",
                 "postcondition": "기능 실행 후 보장되는 조건",
-                "expected_days": 정수,
+                "expectedDays": 정수,
                 "startDate": "YYYY-MM-DD로 정의되는 기능 시작일",
                 "endDate": "YYYY-MM-DD로 정의되는 기능 종료일"
                 "difficulty": 1-5,
@@ -525,16 +475,13 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
         for feature in feature_list:
             required_fields = [
                 "_id", "name", "useCase", "input", "output", "precondition", "postcondition",
-                "expected_days", "startDate", "endDate", "difficulty", "priority"
+                "expectedDays", "startDate", "endDate", "difficulty", "priority"
             ]
             for field in required_fields:
                 if field not in feature:
                     raise ValueError(f"기능 '{feature.get('name', 'unknown')}'에 '{field}' 필드가 누락되었습니다.")
             
-            #if not isinstance(feature["stack"], list):
-            #    raise ValueError(f"기능 '{feature['name']}'의 stack 형식이 잘못되었습니다.")
-            
-            if not isinstance(feature["expected_days"], int) or feature["expected_days"] <= 0:
+            if not isinstance(feature["expectedDays"], int) or feature["expectedDays"] <= 0:
                 raise ValueError(f"기능 '{feature['name']}'의 expected_days는 양의 정수여야 합니다.")
             
             if not isinstance(feature["difficulty"], int) or not 1 <= feature["difficulty"] <= 5:
@@ -560,7 +507,7 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
 #             merged_feature = current_feature.copy()
             
 #             # expected_days나 difficulty가 변경되었는지 확인
-#             if current_feature["expected_days"] is not None and updated["expected_days"] != current_feature["expected_days"]:
+#             if current_feature["expectedDays"] is not None and updated["expectedDays"] != current_feature["expectedDays"]:
 #                 expected_days_changed = True
 #             if current_feature["difficulty"] is not None and updated["difficulty"] != current_feature["difficulty"]:
 #                 difficulty_changed = True
@@ -571,7 +518,7 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
 #                 "output": updated["output"],
 #                 "precondition": updated["precondition"],
 #                 "postcondition": updated["postcondition"],
-#                 "expected_days": updated["expected_days"],
+#                 "expectedDays": updated["expectedDays"],
 #                 "startDate": updated["startDate"],
 #                 "endDate": updated["endDate"],
 #                 "difficulty": updated["difficulty"]
@@ -583,7 +530,7 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
 #                 merged_feature["priority"] = updated["priority"]
 #             elif expected_days_changed or difficulty_changed:
 #                 # expected_days나 difficulty가 변경된 경우 우선순위 재계산
-#                 merged_feature["priority"] = calculate_priority(merged_feature["expected_days"], merged_feature["difficulty"])
+#                 merged_feature["priority"] = calculate_priority(merged_feature["expectedDays"], merged_feature["difficulty"])
 #             else:
 #                 # 변경사항이 없는 경우 기존 priority 유지
 #                 merged_feature["priority"] = current_feature["priority"]
@@ -604,7 +551,7 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
         if "_id" not in feature:
             feature = assign_featureId(feature)
         if "priority" not in feature:
-            feature["priority"] = calculate_priority(feature["expected_days"], feature["difficulty"])
+            feature["priority"] = calculate_priority(feature["expectedDays"], feature["difficulty"])
     
     # 업데이트된 기능 목록으로 교체
     logger.info("\n=== 업데이트된 feature_specification 데이터 ===")
@@ -619,6 +566,8 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
         raise e
     
     # 다음 단게로 넘어가는 경우, MongoDB에 Redis의 데이터를 옮겨서 저장
+    feature_collection = await get_feature_collection()
+
     if gpt_result["isNextStep"] == 1:
         try:
             feature_collection = await get_feature_collection()
@@ -631,8 +580,7 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
                     "output": feat["output"],
                     "precondition": feat["precondition"],
                     "postcondition": feat["postcondition"],
-                    #"stack": feat["stack"],
-                    "expected_days": feat["expected_days"],
+                    "expectedDays": feat["expectedDays"],
                     "startDate": feat["startDate"],
                     "endDate": feat["endDate"],
                     "difficulty": feat["difficulty"],
