@@ -48,6 +48,7 @@ async def calculate_eff_mandays(efficiency_factor: float, number_of_developers: 
 ### feature에 epicId가 추가되었으므로 epic별로 task를 정의
 ### 이때 task는 title, description, assignee, startDate, endDate, priority, expected_workhours, epicId를 포함해야 함.
 async def create_task(project_id: str, epic_id: str) -> List[Dict[str, Any]]:
+    await init_collections()
     logger.info(f"🔍 task 정의 시작: {epic_id}")
     try:
         feature = await feature_collection.find_one({"epicId": epic_id})
@@ -175,17 +176,33 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
         
         logger.info(f"프로젝트 데이터: {project_data}")
         
-        for member in project_data.get("members", []):
+        members = project_data.get("members", [])
+        assert len(members) > 0, "members가 없습니다."
+        
+        # user_collection 직접 초기화 (local variable이라고 찾을 수 없는 문제가 발생함)
+        user_collection = await get_user_collection()
+        for member_ref in members:
             try:
-                name = member.get("name")
-                profiles = member.get("profile", [])  # "profiles" -> "profile"로 수정
+                # DBRef에서 실제 사용자 정보 조회
+                user_id = member_ref.id
+                user_info = await user_collection.find_one({"_id": user_id})
+                if not user_info:
+                    logger.warning(f"⚠️ 사용자 정보를 찾을 수 없습니다: {user_id}")
+                    continue
+                
+                name = user_info.get("name")
+                assert name is not None, "name이 없습니다."
+                profiles = user_info.get("profiles", [])
+                assert len(profiles) > 0, "profile이 없습니다."
                 for profile in profiles:
-                    if profile.get("projectId") == project_data.get("_id"):  # "projectId" -> "_id"로 수정
+                    if profile.get("projectId") == project_id:
                         logger.info(f">> projectId가 일치하는 profile이 존재함: {name}")
-                        position = profile.get("position", "")  # "positions" -> "position"으로 수정
-                        member_info = [name, position]
-                        project_members.append(", ".join(str(item) for item in member_info))
-                        logger.info(f"추가된 멤버: {name}, {position}")
+                        positions = profile.get("positions", [])
+                        assert len(positions) > 0, "position이 없습니다."
+                        positions_str = ", ".join(positions)  # positions 리스트를 쉼표로 구분된 문자열로 변환
+                        member_info = [name, positions_str]
+                        project_members.append(member_info)
+                        logger.info(f"추가된 멤버: {name}, {positions}")
             except Exception as e:
                 logger.error(f"멤버 정보 처리 중 오류 발생: {str(e)}", exc_info=True)
                 continue
@@ -252,8 +269,8 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
         raise e
     try:
         logger.info(f"🔍 프로젝트 시작일: {project['startDate']}, 프로젝트 종료일: {project['endDate']}")
-        project_start_date = datetime.strptime(project["startDate"], "%Y-%m-%d %H:%M:%S")
-        project_end_date = datetime.strptime(project["endDate"], "%Y-%m-%d %H:%M:%S")
+        project_start_date = project["startDate"]  # 이미 datetime 객체이므로 그대로 사용
+        project_end_date = project["endDate"]      # 이미 datetime 객체이므로 그대로 사용
         project_days = (project_end_date - project_start_date).days
     except Exception as e:
         logger.error(f"🚨 프로젝트 기간 계산 중 오류 발생: {e}", exc_info=True)
@@ -283,7 +300,7 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
     
     # 프로젝트의 effective mandays 계산
     efficiency_factor = 0.6
-    number_of_developers = len(project["members"])
+    number_of_developers = len(project_members)
     eff_mandays = await calculate_eff_mandays(efficiency_factor, number_of_developers, sprint_days, workhours_per_day)
 
     # tasks들의 expected_workhours 계산
@@ -495,24 +512,25 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
     
     name_to_id = {}
     user_collection = await get_user_collection()
-    for member in project_members:
+    
+    # DBRef에서 직접 ID 매핑 생성
+    for member_ref in project_data["members"]:
         try:
-            # member가 문자열인 경우를 처리
-            if isinstance(member, str):
-                name = member.split(", ")[0]  # "이름, 포지션" 형식에서 이름만 추출
-            else:
-                name = member[0]  # 리스트인 경우 첫 번째 요소가 이름
-            
-            user_info = await user_collection.find_one({"name": name})
+            user_id = member_ref.id
+            user_info = await user_collection.find_one({"_id": user_id})
             if user_info is None:
-                logger.warning(f"⚠️ 사용자 정보를 찾을 수 없습니다: {name}")
+                logger.warning(f"⚠️ 사용자 정보를 찾을 수 없습니다: {user_id}")
+                continue
+            
+            name = user_info.get("name")
+            if name is None:
+                logger.warning(f"⚠️ 사용자 이름이 없습니다: {user_id}")
                 continue
                 
-            id = user_info["_id"]
-            name_to_id[name] = id
-            logger.info(f"✅ 사용자 매핑 성공 - 이름: {name}, ID: {id}")
+            name_to_id[name] = user_id
+            logger.info(f"✅ 사용자 매핑 성공 - 이름: {name}, ID: {user_id}")
         except Exception as e:
-            logger.error(f"❌ 사용자 정보 처리 중 오류 발생: {name} - {str(e)}", exc_info=True)
+            logger.error(f"❌ 사용자 정보 처리 중 오류 발생: {str(e)}", exc_info=True)
             continue
     
     if not name_to_id:
@@ -530,6 +548,7 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
             if task["assignee"] not in name_to_id:
                 logger.warning(f"⚠️ 할당된 사용자를 찾을 수 없습니다: {task['assignee']}")
                 continue
+            task["assignee"] = name_to_id[task["assignee"]]  # 이름을 ID로 변환
             first_sprint_tasks.append(task)
     
     # API 응답 반환
