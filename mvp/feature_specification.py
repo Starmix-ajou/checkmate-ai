@@ -663,7 +663,7 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
             }
             for feature in merged_features
         ],
-        "isNextStep": gpt_result["isNextStep"]
+        "isNextStep": bool(gpt_result["isNextStep"])
     }
     logger.info(f"👉 API 응답 결과: {response}")
     return response
