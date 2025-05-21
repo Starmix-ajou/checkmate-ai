@@ -601,7 +601,7 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
                     {
                         "title": task["title"],
                         "description": task["description"],
-                        "assignee": task["assignee"],
+                        "assigneeId": task["assignee"],
                         "startDate": task["startDate"],
                         "endDate": task["endDate"],
                         "priority": task["priority"]
