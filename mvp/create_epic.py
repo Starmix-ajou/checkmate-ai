@@ -49,8 +49,7 @@ async def calculate_eff_mandays(efficiency_factor: float, number_of_developers: 
 ### feature에 epicId가 추가되었으므로 epic별로 task를 정의
 ### 이때 task는 title, description, assignee, startDate, endDate, priority, expected_workhours, epicId를 포함해야 함.
 async def create_task(epic_id: str, feature_id: str) -> List[Dict[str, Any]]:
-    #await init_collections()
-    feature_collection = await get_feature_collection()
+    await init_collections()
     logger.info(f"🔍 task 정의 시작: {feature_id}")
     try:
         feature = await feature_collection.find_one({"featureId": feature_id})
@@ -139,7 +138,7 @@ async def create_task(epic_id: str, feature_id: str) -> List[Dict[str, Any]]:
         task_data = {
             "title": task["title"],
             "description": task["description"],
-            "assignee": task["assignee"],
+            "assigneeId": task["assignee"],
             "startDate": task["startDate"],
             "endDate": task["endDate"],
             "priority": task["priority"],
@@ -155,8 +154,7 @@ async def create_task(epic_id: str, feature_id: str) -> List[Dict[str, Any]]:
 ########## =================== Create Sprint ===================== ##########
 async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] = None) -> Dict[str, Any]:
     logger.info(f"🔍 스프린트 생성 시작: {project_id}")
-    #await init_collections()
-    epic_collection = await get_epic_collection()
+    await init_collections()
     
     try:
         epics = await epic_collection.find({"projectId": project_id}).to_list(length=None)
@@ -169,7 +167,6 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
     ### ===== project_members를 "global"로 선언함 ===== ####
     global project_members
     user_collection = await get_user_collection()
-    project_collection = await get_project_collection()
     project_members = await get_project_members(project_id, project_collection, user_collection)
     #project_members = []
     #try:
