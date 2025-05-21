@@ -40,24 +40,6 @@ def clean_text(text: str) -> str:
     
     return text
 
-def convert_google_drive_link(url: str) -> str:
-    """
-    Google Drive 공유 링크를 직접 다운로드 가능한 링크로 변환합니다.
-    
-    Args:
-        url (str): Google Drive 공유 링크
-        
-    Returns:
-        str: 직접 다운로드 가능한 링크
-    """
-    # 파일 ID 추출
-    file_id_match = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
-    if not file_id_match:
-        raise ValueError("유효한 Google Drive 링크가 아닙니다.")
-    
-    file_id = file_id_match.group(1)
-    return f"https://drive.google.com/uc?export=download&id={file_id}"
-
 async def test_pdf_extraction(predefined_definition: str) -> str:
     """
     PDF 파일에서 텍스트를 추출하는 함수를 테스트합니다.
@@ -118,7 +100,6 @@ async def test_pdf_extraction(predefined_definition: str) -> str:
                         async with aiofiles.open(text_file_path, 'w', encoding='utf-8') as f:
                             await f.write(text_content)
                         logger.info(f"✅ 텍스트 파일 저장 성공: {text_file_path}")
-                        
                         return text_content
                         
                     except Exception as e:
@@ -133,17 +114,14 @@ async def test_pdf_extraction(predefined_definition: str) -> str:
 
 async def main():
     # 테스트할 PDF 파일 경로
-    test_pdf_path = "https://ax1nm9kw34v6.objectstorage.ap-chuncheon-1.oci.customer-oci.com/n/ax1nm9kw34v6/b/checkmate-assets/o/%E1%84%8C%E1%85%A6%E1%84%86%E1%85%A9%E1%86%A8%20%E1%84%8B%E1%85%A5%E1%86%B9%E1%84%82%E1%85%B3%E1%86%AB%20%E1%84%86%E1%85%AE%E1%86%AB%E1%84%89%E1%85%A5.pdf"  # 테스트할 PDF 파일 경로를 지정해주세요
-    
+    test_pdf_path = "https://test.com"  # 테스트할 PDF 파일 경로를 지정해주세요
     try:
         # PDF 텍스트 추출 테스트
         extracted_text = await test_pdf_extraction(test_pdf_path)
-        
         # 추출된 텍스트 출력
         print("\n=== 추출된 텍스트 ===")
         print(extracted_text)
         print("=== 텍스트 끝 ===\n")
-        
     except Exception as e:
         print(f"테스트 실패: {str(e)}")
 
