@@ -13,6 +13,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from openai import AsyncOpenAI
 from PyPDF2 import PdfReader
+from read_pdf_util import test_pdf_extraction
 from redis_setting import load_from_redis, save_to_redis
 
 logger = logging.getLogger(__name__)
@@ -45,56 +46,61 @@ async def create_feature_definition(email: str, description: str, definition_url
     # 사전 정의된 기능 정의서 존재 여부 확인
     if predefined_definition:
         logger.info("기능 정의서가 이미 존재합니다.")
-        try:
-            asset_dir=os.path.join(os.path.dirname(__file__), "asset")
-            os.makedirs(asset_dir, exist_ok=True)
+        # try:
+        #     asset_dir=os.path.join(os.path.dirname(__file__), "asset")
+        #     os.makedirs(asset_dir, exist_ok=True)
             
-            filename=os.path.basename(predefined_definition)
+        #     filename=os.path.basename(predefined_definition)
             
-            async with aiohttp.ClientSession() as session:
-                async with session.get(predefined_definition) as response:
-                    if response.status == 200:
-                        logger.info(f"✅ 기능 정의서 URL 접근 성공")
-                        # PDF 데이터를 바이트로 읽기
-                        pdf_bytes = await response.content.read()
-                        logger.info(f"✅ 기능 정의서 bytes로 읽기 성공")
+        #     async with aiohttp.ClientSession() as session:
+        #         async with session.get(predefined_definition) as response:
+        #             if response.status == 200:
+        #                 logger.info(f"✅ 기능 정의서 URL 접근 성공")
+        #                 # PDF 데이터를 바이트로 읽기
+        #                 pdf_bytes = await response.content.read()
+        #                 logger.info(f"✅ 기능 정의서 bytes로 읽기 성공")
                         
-                        # PDF를 텍스트로 변환
-                        pdf_file = io.BytesIO(pdf_bytes)
-                        logger.info(f"✅ io.BytesIO 생성 성공")
-                        pdf_reader = PdfReader(pdf_file)
-                        logger.info(f"✅ PdfReader 생성 성공")
-                        text_content = ""
-                        for page in pdf_reader.pages:
-                            text_content += page.extract_text() + "\n"
-                        logger.info(f"✅ 텍스트 추출 및 하나의 문자열로 결합 성공")
-                        # 텍스트 파일로 저장
-                        text_filename = os.path.splitext(filename)[0] + ".txt"
-                        logger.info(f"✅ 텍스트 파일 이름 생성 성공")
-                        text_file_path = os.path.join(asset_dir, text_filename)
-                        logger.info(f"✅ 텍스트 파일 경로 생성 성공")
-                        async with aiofiles.open(text_file_path, 'w', encoding='utf-8') as f:
-                            await f.write(text_content)
-                        logger.info(f"✅ 텍스트 파일 저장 성공")
+        #                 # PDF를 텍스트로 변환
+        #                 pdf_file = io.BytesIO(pdf_bytes)
+        #                 logger.info(f"✅ io.BytesIO 생성 성공")
+        #                 pdf_reader = PdfReader(pdf_file)
+        #                 logger.info(f"✅ PdfReader 생성 성공")
+        #                 text_content = ""
+        #                 for page in pdf_reader.pages:
+        #                     text_content += page.extract_text() + "\n"
+        #                 logger.info(f"✅ 텍스트 추출 및 하나의 문자열로 결합 성공")
+        #                 # 텍스트 파일로 저장
+        #                 text_filename = os.path.splitext(filename)[0] + ".txt"
+        #                 logger.info(f"✅ 텍스트 파일 이름 생성 성공")
+        #                 text_file_path = os.path.join(asset_dir, text_filename)
+        #                 logger.info(f"✅ 텍스트 파일 경로 생성 성공")
+        #                 async with aiofiles.open(text_file_path, 'w', encoding='utf-8') as f:
+        #                     await f.write(text_content)
+        #                 logger.info(f"✅ 텍스트 파일 저장 성공")
                         
-                        definition_content = text_content
-                    else:
-                        logger.error(f"기능 정의서 다운로드 실패: {response.status}", exc_info=True)
-        except Exception as e:
-            logger.error(f"기능 정의서 다운로드 및 변환 중 오류 발생: {str(e)}", exc_info=True)
-            raise Exception(f"기능 정의서 다운로드 및 변환 중 오류 발생: {str(e)}", exc_info=True) from e
+        #                 definition_content = text_content
+        #             else:
+        #                 logger.error(f"기능 정의서 다운로드 실패: {response.status}", exc_info=True)
+        # except Exception as e:
+        #     logger.error(f"기능 정의서 다운로드 및 변환 중 오류 발생: {str(e)}", exc_info=True)
+        #     raise Exception(f"기능 정의서 다운로드 및 변환 중 오류 발생: {str(e)}", exc_info=True) from e
+        
+        # 기능 정의서 텍스트 추출 함수 호출
+        definition_content = await test_pdf_extraction(predefined_definition)
+        logger.info(f"기능 정의서 pdf로부터 텍스트 추출 완료: {definition_content}")
         
         # GPT API 호출을 위한 프롬프트 정의
         create_feature_prompt = ChatPromptTemplate.from_template("""
         당신은 소프트웨어 요구사항 분석가입니다. 주니어 개발팀의 입장에서 개발하려는 서비스에 필요할 것으로 예상되는 기능 목록을 정의하는 것이 당신의 임무입니다. 
         각 기능은 구현 가능한 작은 단위여야 하고, 반드시 중복되지 않아야 합니다.
 
-        다음은 개발팀이 사전에 정의한 정의서의 내용입니다:
+        다음은 개발팀이 사전에 정의한 정의서의 내용입니다. 이는 기능을 포함해서 다른 정보들이 모두 섞인 텍스트 파일입니다.
+        따라서 해당 텍스트 파일을 읽고 "기능 목록"과 관련된 내용만 추출해서 features를 구성해 주세요.
         {definition_content}
 
         위 정의서를 자세히 분석하여 다음 사항을 수행해주세요:
-        1. 정의서에 명시된 모든 기능을 추출하여 features 배열에 포함시켜주세요.
-        2. 정의서에 명시된 기능 외에 추가로 필요한 기능을 제안해주세요.
+        1. features는 정의서에 이미 명시되어 있는 정보입니다.
+        2. suggestions는 features에 없는 기능들 중에 추가로 필요할 것으로 예상되는 기능을 제안해주세요.
 
         다음 형식으로 응답해주세요:
         {{
