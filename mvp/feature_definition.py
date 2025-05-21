@@ -264,7 +264,7 @@ async def update_feature_definition(email: str, feedback: str) -> Dict[str, Any]
     if is_next_step == 1:
         result = {
             "features": feature_data,
-            "isNextStep": 1
+            "isNextStep": True
         }
         logger.info(f"👉 API 응답 결과: {result}")
         return result
@@ -337,7 +337,7 @@ async def update_feature_definition(email: str, feedback: str) -> Dict[str, Any]
         # API 응답용 결과 반환
         result = {
             "features": feature_data,
-            "isNextStep": 0
+            "isNextStep": False
         }
         logger.info(f"👉 API 응답 결과: {result}")
         return result
