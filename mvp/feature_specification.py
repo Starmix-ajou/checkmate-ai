@@ -6,6 +6,7 @@ import math
 import os
 import re
 import uuid
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
 from dotenv import load_dotenv
@@ -206,7 +207,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     9. 객체의 마지막 항목에는 쉼표를 넣지 마세요.
     10. 배열의 마지막 항목 뒤에도 쉼표를 넣지 마세요.
     11. difficulty는 1 이상 5 이하의 정수여야 합니다.
-    12. startDate와 endDate는 "YYYY-MM-DD" 형식이어야 합니다.
+    12. startDate와 endDate는 "YYYY-MM-DD" 형식이어야 합니다. 예: "2024-03-20"
     13. 각 기능에 대해 다음 항목들을 JSON 형식으로 응답해주세요:
     {{
         "features": [
@@ -219,7 +220,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
                 "postcondition": "기능 실행 후 보장되는 조건",
                 "startDate": "YYYY-MM-DD",
                 "endDate": "YYYY-MM-DD",
-                "difficulty": 1
+                "difficulty": 1-5
             }}
         ]
     }}
@@ -264,11 +265,14 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         for data in feature_list:
             try:
                 start_date = datetime.strptime(data["startDate"], "%Y-%m-%d")
+                logger.info(f"🔍 strptime 후 start_date: {start_date}")
                 end_date = datetime.strptime(data["endDate"], "%Y-%m-%d")
-                expected_days = (end_date - start_date).days
+                logger.info(f"🔍 strptime 후 end_date: {end_date}")
             except Exception as e:
                 logger.error(f"날짜 형식 변환 중 오류 발생: {str(e)}")
                 raise ValueError(f"날짜 형식이 올바르지 않습니다. YYYY-MM-DD 형식이어야 합니다: {str(e)}")
+            expected_days = (end_date - start_date).days
+            logger.info(f"🔍 expected_days: {expected_days}")
             feature = {
                 "name": data["name"],
                 "useCase": data["useCase"],
@@ -456,6 +460,8 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
     2. 종료 요청:
     예시: "이대로 좋습니다", "더 이상 수정할 필요 없어요", "다음으로 넘어가죠"
     1번 유형의 경우는 isNextStep을 0으로, 2번 유형의 경우는 isNextStep을 1로 설정해주세요.
+    
+    사용자 피드백이 수정/삭제 요청인 경우, 어떤 종류의 피드백이 주어졌는지 분석하세요. 그리고 분석한 피드백을 다음의 내용을 생성하는 데에 적용하세요.
 
     다음 형식으로 응답해주세요:
     주의사항:
@@ -471,6 +477,7 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
     9. startDate와 endDate는 프로젝트 시작일인 {startDate}와 종료일인 {endDate} 사이에 있어야 합니다.
     10. 요청에 포함된 값들 중 null이 존재할 경우, 해당 필드를 조건에 맞게 생성해 주세요.
     11. isNextStep을 1로 판단하였다면, 마지막으로 {feedback}의 내용이 반환할 결과에 반영되었는지 확인하세요.
+    12. startDate와 endDate는 "YYYY-MM-DD" 형식이어야 합니다. 예: "2024-03-20"
     {{
         "isNextStep": 0 또는 1,
         "features": [
@@ -481,8 +488,8 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
                 "output": "출력 결과",
                 "precondition": "기능 실행 전 만족해야 할 조건",
                 "postcondition": "기능 실행 후 보장되는 조건",
-                "startDate": "YYYY-MM-DD로 정의되는 기능 시작일",
-                "endDate": "YYYY-MM-DD로 정의되는 기능 종료일"
+                "startDate": "YYYY-MM-DD",
+                "endDate": "YYYY-MM-DD",
                 "difficulty": 1-5,
                 "priority": 정수
             }}
@@ -624,8 +631,11 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
         
         try:
             start_date = datetime.datetime.strptime(feature["startDate"], "%Y-%m-%d")
+            logger.info(f"🔍 strptime 후 start_date: {start_date}")
             end_date = datetime.datetime.strptime(feature["endDate"], "%Y-%m-%d")
+            logger.info(f"🔍 strptime 후 end_date: {end_date}")
             workdays = int((end_date - start_date).days)
+            logger.info(f"🔍 strptime 후 계산된 workdays: {workdays}")
             if workdays <= 0:
                 logger.warning(f"⚠️ 기능 '{feature['name']}'의 expectedDays가 0일 이하입니다. 1일로 강제 설정합니다.")
                 workdays = 1
