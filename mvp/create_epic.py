@@ -303,6 +303,27 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
     number_of_developers = len(project_members)
     eff_mandays = await calculate_eff_mandays(efficiency_factor, number_of_developers, sprint_days, workhours_per_day)
 
+    # pendingTaskIds가 존재할 경우, Id를 하나씩 순회하면서 tasks에서 제외되어 있는 task를 추가하고, tasks의 제일 앞에 위치시키기
+    if pending_tasks_ids:
+        logger.info(f"🔍 pendingTaskIds가 존재합니다. 이를 바탕으로 tasks에서 제외되어 있는 task를 추가하고, tasks의 제일 앞에 위치시킵니다.")
+        for pending_task_id in pending_tasks_ids:
+            tasks_ids = [task["_id"] for task in tasks]
+            if pending_task_id not in tasks_ids:
+                logger.info(f"🔍 pendingTaskId: {pending_task_id}가 tasks에 존재하지 않습니다. 해당 id를 가진 task를 추가합니다.")
+                try:
+                    pending_task = await task_collection.find_one({"_id": pending_task_id})
+                    logger.info(f"🔍 pendingTaskId: {pending_task_id}로 task collection에서 조회된 정보: {pending_task}")
+                except Exception as e:
+                    logger.error(f"🚨 pendingTaskId: {pending_task_id}로 task collection에서 조회되는 정보가 없습니다. {e}", exc_info=True)
+                    raise e
+                try:
+                    tasks.insert(0, pending_task)
+                except Exception as e:
+                    logger.error(f"🚨 pendingTaskId: {pending_task_id}를 가진 task를 제일 앞에 위치시키는 중 오류 발생: {e}", exc_info=True)
+                    raise e
+            else:
+                logger.info(f"🔍 pendingTaskId: {pending_task_id}가 tasks에 이미 존재합니다.")
+
     # tasks들의 expected_workhours 계산
     #logger.info(f" tasks의 타입: {type(tasks)}")   # Dict
     logger.info(f" tasks의 내용: {tasks}")
