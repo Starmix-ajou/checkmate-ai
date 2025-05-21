@@ -25,8 +25,6 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-
-
 def assign_featureId(feature: Dict[str, Any]) -> Dict[str, Any]:
     """
     기능 목록에 기능 ID를 할당합니다.
@@ -93,11 +91,16 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         if isinstance(project_data, str):
             project_data = json.loads(project_data)
     except Exception as e:
-        logger.error(f"🚨 email이 일치하는 Project 정보 JSON 로드 중 오류 발생: {str(e)}")
-        raise Exception(f"🚨 email이 일치하는 Project 정보 JSON 로드 중 오류 발생: {str(e)}") from e
+        logger.error(f"🚨 email이 일치하는 project 정보 JSON 로드 중 오류 발생: {str(e)}")
+        raise Exception(f"🚨 email이 일치하는 project 정보 JSON 로드 중 오류 발생: {str(e)}") from e
     
-    if isinstance(feature_data, str):
-        feature_data = json.loads(feature_data)
+    try:
+        if isinstance(feature_data, str):
+            feature_data = json.loads(feature_data)
+    except Exception as e:
+        logger.error(f"🚨 email이 일치하는 features 정보 JSON 로드 중 오류 발생: {str(e)}")
+        raise Exception(f"🚨 email이 일치하는 features 정보 JSON 로드 중 오류 발생: {str(e)}") from e
+    
     
     # 프로젝트 정보 추출
     try:
@@ -121,22 +124,52 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     print(f"프로젝트 아이디: {projectId}")
     
     try:
-        user_collection = await get_user_collection()
-        project_collection = await get_project_collection()
-        project_members = await get_project_members(projectId, project_collection, user_collection)
+        logger.info(f"🔍 Redis에서 프로젝트 멤버 정보 불러오기 시작. 조회 key값: {email}")
+        project_data = await load_from_redis(email)
+        members = project_data.get("members", [])
+        logger.info(f"🔍 Redis에서 프로젝트 멤버 정보: {members}")
     except Exception as e:
-        logger.error(f"프로젝트 멤버 정보 처리 중 오류 발생: {str(e)}", exc_info=True)
+        logger.error(f"프로젝트 멤버 정보가 Redis에 존재하지 않습니다: {str(e)}", exc_info=True)
         raise
+    for member in members:
+        try:
+            name = member.get("name")
+            logger.info(f"🔍 선택된 프로젝트 멤버의 이름: {name}")
+            profiles = member.get("profiles", [])
+            logger.info(f"🔍 선택된 프로젝트 멤버의 모든 프로필 정보: {profiles}")
+        except Exception as e:
+            logger.error(f"프로젝트 멤버의 name 또는 profiles 정보가 Redis에 존재하지 않습니다: {str(e)}", exc_info=True)
+            raise e
+        for profile in profiles:
+            try:
+                project_id_of_profile = profile.get("projectId")
+            except Exception as e:
+                logger.error(f"프로젝트 멤버의 projectId 정보가 Redis에 존재하지 않습니다: {str(e)}", exc_info=True)
+                raise e
+            if project_id_of_profile == projectId:
+                logger.info(f"🔍 프로젝트 아이디와 일치하는 프로필 정보를 감지함: {profile}")
+                try:
+                    positions = profile.get("positions", [])
+                    if not positions:  # positions가 비어있는 경우
+                        logger.warning(f"⚠️ positions가 비어있습니다.")
+                        positions = [""]  # 빈 문자열을 포함한 리스트로 설정
+                    logger.info(f"🔍 선택된 프로젝트 멤버의 역할들: {positions}")
+                except Exception as e:
+                    logger.error(f"profile positions 접근 중 오류 발생: {str(e)}")
+                    continue
+                try:
+                    member_info = [
+                        name,
+                        positions,  # 모든 positions를 쉼표로 구분하여 하나의 문자열로
+                    ]
+                    project_members.append(", ".join(str(item) for item in member_info))
+                    logger.info(f"🔍 프로젝트 멤버 정보를 project_members에 다음과 같이 추가: {project_members}")
+                except Exception as e:
+                    logger.error(f"member_info 생성 중 오류 발생: {str(e)}")
+                    break
+            continue
 
-    try:
-        if isinstance(feature_data, str):
-            feature_data = json.loads(feature_data)
-    except Exception as e:
-        logger.error(f"🚨 features 접근 중 오류 발생: {str(e)}")
-        raise Exception(f"🚨 features 접근 중 오류 발생: x{str(e)}") from e
-    
     print("\n=== 불러온 프로젝트 정보 ===")
-    #print("스택:", stacks)
     print("멤버:", project_members)
     print("기능 목록:", feature_data)
     print("시작일:", project_start_date)
@@ -150,7 +183,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     각 기능별로 상세 명세를 작성하고, 필요한 정보를 지정해주세요.
     절대 주석을 추가하지 마세요. 당신은 한글이 주언어입니다.
     
-    프로젝트 멤버별 [이름, 역할, 스택]를 융합한 리스트:
+    프로젝트 멤버별 [이름, [역할1, 역할2, ...]] 정보:
     {project_members}
     
     정의되어 있는 기능 목록:
@@ -172,10 +205,9 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     8. 모든 문자열은 쌍따옴표(")로 감싸주세요.
     9. 객체의 마지막 항목에는 쉼표를 넣지 마세요.
     10. 배열의 마지막 항목 뒤에도 쉼표를 넣지 마세요.
-    11. expected_days는 양의 정수여야 합니다.
-    12. difficulty는 1 이상 5 이하의 정수여야 합니다.
-    13. startDate와 endDate는 "YYYY-MM-DD" 형식이어야 합니다.
-    14. 각 기능에 대해 다음 항목들을 JSON 형식으로 응답해주세요:
+    11. difficulty는 1 이상 5 이하의 정수여야 합니다.
+    12. startDate와 endDate는 "YYYY-MM-DD" 형식이어야 합니다.
+    13. 각 기능에 대해 다음 항목들을 JSON 형식으로 응답해주세요:
     {{
         "features": [
             {{
@@ -185,7 +217,6 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
                 "output": "기능의 출력 결과",
                 "precondition": "기능 실행 전 만족해야 할 조건",
                 "postcondition": "기능 실행 후 보장되는 조건",
-                "expectedDays": 정수,
                 "startDate": "YYYY-MM-DD",
                 "endDate": "YYYY-MM-DD",
                 "difficulty": 1
@@ -231,6 +262,13 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         
         features_to_store = []
         for data in feature_list:
+            try:
+                start_date = datetime.strptime(data["startDate"], "%Y-%m-%d")
+                end_date = datetime.strptime(data["endDate"], "%Y-%m-%d")
+                expected_days = (end_date - start_date).days
+            except Exception as e:
+                logger.error(f"날짜 형식 변환 중 오류 발생: {str(e)}")
+                raise ValueError(f"날짜 형식이 올바르지 않습니다. YYYY-MM-DD 형식이어야 합니다: {str(e)}")
             feature = {
                 "name": data["name"],
                 "useCase": data["useCase"],
@@ -238,12 +276,12 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
                 "output": data["output"],
                 "precondition": data["precondition"],
                 "postcondition": data["postcondition"],
-                "priority": calculate_priority(data["expectedDays"], data["difficulty"]),
+                "priority": calculate_priority(expected_days, data["difficulty"]),
                 "relfeatIds": [],
                 "embedding": [],
                 "startDate": data["startDate"],
                 "endDate": data["endDate"],
-                "expectedDays": data["expectedDays"],
+                "expectedDays": expected_days,
                 "difficulty": data["difficulty"]
             }
             feature = assign_featureId(feature)
@@ -297,36 +335,66 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
         raise Exception(f"Redis로부터 프로젝트 데이터 불러오기 실패: {str(e)}") from e
     
     #print(f"👍 프로젝트 데이터 type: ", type(project_data)) # Dict가 반환됨
+    try:
+        projectId = project_data.get("projectId", "")
+    except Exception as e:
+        logger.error(f"projectId 접근 중 오류 발생: {str(e)}")
+        raise
 
     project_start_date = project_data.get("startDate")
     project_end_date = project_data.get("endDate")  # 🚨 Project EndDate는 변경될 수 있음
-    
-    # 프로젝트 멤버와 스택 정보 추출    # 🚨 Project Members와 Stacks는 변경될 수 있음
+    current_features = draft_feature_specification
     project_members = []
-    #stacks = []
     
-    for member in project_data.get("members", []):
+    try:
+        logger.info(f"🔍 Redis에서 프로젝트 멤버 정보 불러오기 시작. 조회 key값: {email}")
+        project_data = await load_from_redis(email)
+        members = project_data.get("members", [])
+        logger.info(f"🔍 Redis에서 프로젝트 멤버 정보: {members}")
+    except Exception as e:
+        logger.error(f"프로젝트 멤버 정보가 Redis에 존재하지 않습니다: {str(e)}", exc_info=True)
+        raise
+    for member in members:
         try:
             name = member.get("name")
+            logger.info(f"🔍 선택된 프로젝트 멤버의 이름: {name}")
             profiles = member.get("profiles", [])
-            for profile in profiles:
-                if profile.get("projectId") == project_data.get("projectId"):
-                    position = profile.get("positions", [])[0] if profile.get("positions") else ""
+            logger.info(f"🔍 선택된 프로젝트 멤버의 모든 프로필 정보: {profiles}")
+        except Exception as e:
+            logger.error(f"프로젝트 멤버의 name 또는 profiles 정보가 Redis에 존재하지 않습니다: {str(e)}", exc_info=True)
+            raise e
+        for profile in profiles:
+            try:
+                project_id_of_profile = profile.get("projectId")
+            except Exception as e:
+                logger.error(f"프로젝트 멤버의 projectId 정보가 Redis에 존재하지 않습니다: {str(e)}", exc_info=True)
+                raise e
+            if project_id_of_profile == projectId:
+                logger.info(f"🔍 프로젝트 아이디와 일치하는 프로필 정보를 감지함: {profile}")
+                try:
+                    positions = profile.get("positions", [])
+                    if not positions:  # positions가 비어있는 경우
+                        logger.warning(f"⚠️ positions가 비어있습니다.")
+                        positions = [""]  # 빈 문자열을 포함한 리스트로 설정
+                    logger.info(f"🔍 선택된 프로젝트 멤버의 역할들: {positions}")
+                except Exception as e:
+                    logger.error(f"profile positions 접근 중 오류 발생: {str(e)}")
+                    continue
+                try:
                     member_info = [
                         name,
-                        position,
+                        positions,  # 모든 positions를 쉼표로 구분하여 하나의 문자열로
                     ]
                     project_members.append(", ".join(str(item) for item in member_info))
-        except Exception as e:
-            logger.error(f"멤버 정보 처리 중 오류 발생: {str(e)}")
+                    logger.info(f"🔍 프로젝트 멤버 정보를 project_members에 다음과 같이 추가: {project_members}")
+                except Exception as e:
+                    logger.error(f"member_info 생성 중 오류 발생: {str(e)}")
+                    break
             continue
-    
-    current_features = draft_feature_specification
     
     logger.info(f"project_start_date: {project_start_date}")
     logger.info(f"project_end_date: {project_end_date}")
     logger.info(f"project_members: {project_members}")
-    #logger.info(f"stacks: {stacks}")
     logger.info(f"current_features: {current_features}")
     
     prev_feat_num = len(current_features)
@@ -375,7 +443,7 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
     {startDate}
     2. 프로젝트 종료일:
     {endDate}
-    3. 프로젝트 멤버별 [이름, 역할, 스택]:
+    3. 프로젝트 멤버별 [이름, [역할1, 역할2, ...]]:
     {project_members}
     4. 프로젝트에 현재 포함되어 있는 기능 목록:
     {current_features}
@@ -399,24 +467,20 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
     5. isNextStep은 사용자의 피드백이 종료 요청인 경우 1, 수정/삭제 요청인 경우 0으로 설정해주세요.
     6. 각 기능의 모든 필드를 포함해주세요.
     7. difficulty는 1에서 5 사이의 정수여야 합니다.
-    8. expected_days는 양의 정수여야 합니다.
-    9. 절대 주석을 추가하지 마세요.
-    10. startDate와 endDate는 프로젝트 시작일인 {startDate}와 종료일인 {endDate} 사이에 있어야 하며, 그 기간이 expected_days와 일치해야 합니다.
-    11. 요청에 포함된 값들 중 null이 존재할 경우, 해당 필드를 조건에 맞게 생성해 주세요.
-    12. _id는 절대 수정하지 말고, 값이 없더라도 추가하지 마세요. current_features에 제시된 _id의 값과 동일한 값만 반환하세요.
-    13. isNextStep을 1로 판단하였다면, 마지막으로 {feedback}의 내용이 반환할 결과에 반영되었는지 확인하세요.
+    8. 절대 주석을 추가하지 마세요.
+    9. startDate와 endDate는 프로젝트 시작일인 {startDate}와 종료일인 {endDate} 사이에 있어야 합니다.
+    10. 요청에 포함된 값들 중 null이 존재할 경우, 해당 필드를 조건에 맞게 생성해 주세요.
+    11. isNextStep을 1로 판단하였다면, 마지막으로 {feedback}의 내용이 반환할 결과에 반영되었는지 확인하세요.
     {{
         "isNextStep": 0 또는 1,
         "features": [
             {{
-                "_id": "기능의 고유 ID",
                 "name": "기능명",
                 "useCase": "사용 사례",
                 "input": "입력 데이터",
                 "output": "출력 결과",
                 "precondition": "기능 실행 전 만족해야 할 조건",
                 "postcondition": "기능 실행 후 보장되는 조건",
-                "expectedDays": 정수,
                 "startDate": "YYYY-MM-DD로 정의되는 기능 시작일",
                 "endDate": "YYYY-MM-DD로 정의되는 기능 종료일"
                 "difficulty": 1-5,
@@ -424,6 +488,8 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
             }}
         ]
     }}
+    
+    명심하세요. features에 대해서 모든 하위 feature들의 startDate와 endDate가 프로젝트 시작일과 종료일 사이에 있지 않다면, 프로젝트 시작일과 종료일 사이에 있도록 startDate와 endDate를 수정해 주세요.
     """)
     
     messages = update_prompt.format_messages(
@@ -431,7 +497,6 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
         endDate=project_end_date,
         current_features=current_features,
         project_members=project_members,
-        #stacks=stacks,
         feedback=feedback,
     )
     
@@ -474,27 +539,30 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
         # 각 기능 검증
         for feature in feature_list:
             required_fields = [
-                "_id", "name", "useCase", "input", "output", "precondition", "postcondition",
-                "expectedDays", "startDate", "endDate", "difficulty", "priority"
+                "name", "useCase", "input", "output", "precondition", "postcondition",
+                "startDate", "endDate", "difficulty", "priority"
             ]
             for field in required_fields:
                 if field not in feature:
-                    raise ValueError(f"기능 '{feature.get('name', 'unknown')}'에 '{field}' 필드가 누락되었습니다.")
-            
-            if not isinstance(feature["expectedDays"], int) or feature["expectedDays"] <= 0:
-                raise ValueError(f"기능 '{feature['name']}'의 expected_days는 양의 정수여야 합니다.")
+                    raise ValueError(f"🚨 기능 '{feature.get('name', 'unknown')}'에 '{field}' 필드가 누락되었습니다.")
             
             if not isinstance(feature["difficulty"], int) or not 1 <= feature["difficulty"] <= 5:
-                raise ValueError(f"기능 '{feature['name']}'의 difficulty 형식이 잘못되었습니다.")
+                logger.warning(f"⚠️ 기능 '{feature['name']}'의 difficulty 형식이 잘못되었습니다.")
+                feature["difficulty"] = 1       # 1로 강제 정의
             
-            if not feature["startDate"] >= project_start_date or not feature["endDate"] <= project_end_date:
-                raise ValueError(f"기능 '{feature['name']}'의 startDate와 endDate는 프로젝트 시작일인 {project_start_date}와 종료일인 {project_end_date} 사이에 있어야 합니다.")
-        
+            if not feature["startDate"] >= project_start_date:
+                logger.warning(f"⚠️ 기능 '{feature['name']}'의 startDate는 프로젝트 시작일인 {project_start_date} 이후여야 합니다.")
+                feature["startDate"] = project_start_date
+            
+            if not feature["endDate"] <= project_end_date:
+                logger.warning(f"⚠️ 기능 '{feature['name']}'의 endDate는 프로젝트 종료일인 {project_end_date} 이전이어야 합니다.")
+                feature["endDate"] = project_end_date
+            
     except Exception as e:
         logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True)
         raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True) from e
 
-     # 업데이트된 기능 정보를 기존 기능 리스트와 융합
+# 업데이트된 기능 정보를 기존 기능 리스트와 융합
 #     updated_map = {feature["name"]: feature for feature in feature_list}
 #     merged_features = []
     
@@ -548,10 +616,30 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
     
     # _id가 없는 기능에 대해 assign_featureId 호출
     for feature in merged_features:
-        if "_id" not in feature:
+        try:
             feature = assign_featureId(feature)
+        except Exception as e:
+            logger.error(f"featureId 부여 과정에서 오류 발생: {str(e)}")
+            raise Exception(f"featureId 부여 과정에서 오류 발생: {str(e)}") from e
+        
+        try:
+            start_date = datetime.datetime.strptime(feature["startDate"], "%Y-%m-%d")
+            end_date = datetime.datetime.strptime(feature["endDate"], "%Y-%m-%d")
+            workdays = int((end_date - start_date).days)
+            if workdays <= 0:
+                logger.warning(f"⚠️ 기능 '{feature['name']}'의 expectedDays가 0일 이하입니다. 1일로 강제 설정합니다.")
+                workdays = 1
+        except ValueError as e:
+            logger.error(f"날짜 형식이 올바르지 않습니다: {str(e)}")
+            raise ValueError(f"날짜 형식이 올바르지 않습니다. YYYY-MM-DD 형식이어야 합니다: {str(e)}")
+        feature["expectedDays"] = workdays
+        
         if "priority" not in feature:
-            feature["priority"] = calculate_priority(feature["expectedDays"], feature["difficulty"])
+            try:
+                feature["priority"] = calculate_priority(feature["expectedDays"], feature["difficulty"])
+            except Exception as e:
+                logger.error(f"priority 계산 중 오류 발생: {str(e)}")
+                raise Exception(f"priority 계산 중 오류 발생: {str(e)}") from e
     
     # 업데이트된 기능 목록으로 교체
     logger.info("\n=== 업데이트된 feature_specification 데이터 ===")
