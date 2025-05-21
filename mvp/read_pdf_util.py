@@ -40,7 +40,7 @@ def clean_text(text: str) -> str:
     
     return text
 
-async def test_pdf_extraction(predefined_definition: str) -> str:
+async def extract_pdf_text(predefined_definition: str) -> str:
     """
     PDF 파일에서 텍스트를 추출하는 함수를 테스트합니다.
     
@@ -117,7 +117,7 @@ async def main():
     test_pdf_path = "https://test.com"  # 테스트할 PDF 파일 경로를 지정해주세요
     try:
         # PDF 텍스트 추출 테스트
-        extracted_text = await test_pdf_extraction(test_pdf_path)
+        extracted_text = await extract_pdf_text(test_pdf_path)
         # 추출된 텍스트 출력
         print("\n=== 추출된 텍스트 ===")
         print(extracted_text)

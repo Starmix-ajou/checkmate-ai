@@ -13,7 +13,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from openai import AsyncOpenAI
 from PyPDF2 import PdfReader
-from read_pdf_util import test_pdf_extraction
+from read_pdf_util import extract_pdf_text
 from redis_setting import load_from_redis, save_to_redis
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,7 @@ async def create_feature_definition(email: str, description: str, definition_url
         #     raise Exception(f"기능 정의서 다운로드 및 변환 중 오류 발생: {str(e)}", exc_info=True) from e
         
         # 기능 정의서 텍스트 추출 함수 호출
-        definition_content = await test_pdf_extraction(predefined_definition)
+        definition_content = await extract_pdf_text(predefined_definition)
         logger.info(f"기능 정의서 pdf로부터 텍스트 추출 완료: {definition_content}")
         
         # GPT API 호출을 위한 프롬프트 정의
