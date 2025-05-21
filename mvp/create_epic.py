@@ -168,50 +168,6 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
     global project_members
     user_collection = await get_user_collection()
     project_members = await get_project_members(project_id, project_collection, user_collection)
-    #project_members = []
-    #try:
-    #    project_data = await project_collection.find_one({"_id": project_id})
-    #    if not project_data:
-    #        logger.error(f"projectId {project_id}에 해당하는 프로젝트를 찾을 수 없습니다.")
-    #        raise Exception(f"projectId {project_id}에 해당하는 프로젝트를 찾을 수 없습니다.")
-    #    
-    #    logger.info(f"프로젝트 데이터: {project_data}")
-    #    
-    #    members = project_data.get("members", [])
-    #    assert len(members) > 0, "members가 없습니다."
-    #    
-    #    # user_collection 직접 초기화 (local variable이라고 찾을 수 없는 문제가 발생함)
-    #    user_collection = await get_user_collection()
-    #    for member_ref in members:
-    #        try:
-    #            # DBRef에서 실제 사용자 정보 조회
-    #            user_id = member_ref.id
-    #            user_info = await user_collection.find_one({"_id": user_id})
-    #           if not user_info:
-    #                logger.warning(f"⚠️ 사용자 정보를 찾을 수 없습니다: {user_id}")
-    #                continue
-    #             name = user_info.get("name")
-    #            assert name is not None, "name이 없습니다."
-    #            profiles = user_info.get("profiles", [])
-    #            assert len(profiles) > 0, "profile이 없습니다."
-    #        for profile in profiles:
-    #            if profile.get("projectId") == project_id:
-    #                logger.info(f">> projectId가 일치하는 profile이 존재함: {name}")
-    #                positions = profile.get("positions", [])
-    #            assert len(positions) > 0, "position이 없습니다."
-    #            positions_str = ", ".join(positions)  # positions 리스트를 쉼표로 구분된 문자열로 변환
-    #            member_info = [name, positions_str]
-    #            project_members.append(member_info)
-    #            logger.info(f"추가된 멤버: {name}, {positions}")
-    #        except Exception as e:
-    #            logger.error(f"멤버 정보 처리 중 오류 발생: {str(e)}", exc_info=True)
-    #            continue
-    #except Exception as e:
-    #    logger.error(f"MongoDB에서 Project 정보 로드 중 오류 발생: {e}", exc_info=True)
-    #    raise e
-    #
-    #logger.info(f"📌 project_members: {project_members}")
-    #assert len(project_members) > 0, "project_members가 비어있습니다."
     
     tasks = []
     for epic in epics:
@@ -617,30 +573,3 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
     
 if __name__ == "__main__":
     asyncio.run(create_sprint())
-    
-            
-# PendingTaskId 검사
-#for pending_task in pending_tasks_ids:
-#    if pending_task in current_epic_tasks:
-#        logger.info(f"👍 {pending_task}는 이미 sprint에 포함되어 있습니다.")
-#        pass
-#    else:
-#        logger.info(f"👎 {pending_task}가 sprint에 포함되어 있지 않습니다.")
-#        pass
-#    try:
-#        task_to_append = task_collection.find_one({"_id": pending_task})
-#        logger.info(f"추가할 pending task의 정보를 DB에서 확인하였습니다: {task_to_append}")
-#   except Exception as e:
-#        logger.error(f"추가할 pending task의 정보를 DB에서 확인하는 중 오류 발생: {e}", exc_info=True)
-#        raise e
-#    try:
-#        epic_to_append = epic_collection.find_one({"_id": task_to_append["epicId"]})
-#        logger.info(f"추가할 pending task의 epic 정보를 DB에서 확인하였습니다: {epic_to_append}")
-#   except Exception as e:
-#        logger.error(f"추가할 pending task의 epic 정보를 DB에서 확인하는 중 오류 발생: {e}", exc_info=True)
-#        raise e
-#    if epic_to_append["epicId"] == epic_id:
-#        logger.info(f"pending task가 속한 epic이 이미 sprint에 포함되어 있습니다.")
-#        break
-#    logger.info(f"pending task가 속한 epic을 추가해야 합니다.")
-### --------- 여기에 epic, task 추가 로직 작성해야 됨 --------- ###
