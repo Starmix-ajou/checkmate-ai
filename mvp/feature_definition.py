@@ -46,44 +46,6 @@ async def create_feature_definition(email: str, description: str, definition_url
     # 사전 정의된 기능 정의서 존재 여부 확인
     if predefined_definition:
         logger.info("기능 정의서가 이미 존재합니다.")
-        # try:
-        #     asset_dir=os.path.join(os.path.dirname(__file__), "asset")
-        #     os.makedirs(asset_dir, exist_ok=True)
-            
-        #     filename=os.path.basename(predefined_definition)
-            
-        #     async with aiohttp.ClientSession() as session:
-        #         async with session.get(predefined_definition) as response:
-        #             if response.status == 200:
-        #                 logger.info(f"✅ 기능 정의서 URL 접근 성공")
-        #                 # PDF 데이터를 바이트로 읽기
-        #                 pdf_bytes = await response.content.read()
-        #                 logger.info(f"✅ 기능 정의서 bytes로 읽기 성공")
-                        
-        #                 # PDF를 텍스트로 변환
-        #                 pdf_file = io.BytesIO(pdf_bytes)
-        #                 logger.info(f"✅ io.BytesIO 생성 성공")
-        #                 pdf_reader = PdfReader(pdf_file)
-        #                 logger.info(f"✅ PdfReader 생성 성공")
-        #                 text_content = ""
-        #                 for page in pdf_reader.pages:
-        #                     text_content += page.extract_text() + "\n"
-        #                 logger.info(f"✅ 텍스트 추출 및 하나의 문자열로 결합 성공")
-        #                 # 텍스트 파일로 저장
-        #                 text_filename = os.path.splitext(filename)[0] + ".txt"
-        #                 logger.info(f"✅ 텍스트 파일 이름 생성 성공")
-        #                 text_file_path = os.path.join(asset_dir, text_filename)
-        #                 logger.info(f"✅ 텍스트 파일 경로 생성 성공")
-        #                 async with aiofiles.open(text_file_path, 'w', encoding='utf-8') as f:
-        #                     await f.write(text_content)
-        #                 logger.info(f"✅ 텍스트 파일 저장 성공")
-                        
-        #                 definition_content = text_content
-        #             else:
-        #                 logger.error(f"기능 정의서 다운로드 실패: {response.status}", exc_info=True)
-        # except Exception as e:
-        #     logger.error(f"기능 정의서 다운로드 및 변환 중 오류 발생: {str(e)}", exc_info=True)
-        #     raise Exception(f"기능 정의서 다운로드 및 변환 중 오류 발생: {str(e)}", exc_info=True) from e
         
         # 기능 정의서 텍스트 추출 함수 호출
         definition_content = await extract_pdf_text(predefined_definition)
