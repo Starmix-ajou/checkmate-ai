@@ -3,6 +3,7 @@
 mvp/redis-data.json
 mvp/mock_*.json
 mvp/requirements.in
+mvp/asset/
 
 # 가상 환경 dismiss
 venv/
@@ -19,12 +20,11 @@ db_structure.txt
 tests/
 src/
 test.txt
-asset/
 
 # 모델 학습 및 평가에 사용된 데이터 파일 dismiss
 Korpora/
 AI_hub/
-bge-m3-training.py
+bge_training.py
 
 # Created by https://www.toptal.com/developers/gitignore/api/macos,pycharm,visualstudiocode,python
 # Edit at https://www.toptal.com/developers/gitignore?templates=macos,pycharm,visualstudiocode,python

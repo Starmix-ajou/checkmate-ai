@@ -477,7 +477,7 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
     7. difficulty는 1에서 5 사이의 정수여야 합니다.
     8. 절대 주석을 추가하지 마세요.
     9. startDate와 endDate는 프로젝트 시작일인 {startDate}와 종료일인 {endDate} 사이에 있어야 합니다.
-    10. 요청에 포함된 값들 중 null이 존재할 경우, 해당 필드를 조건에 맞게 생성해 주세요.
+    10. 값이 null로 반환되는 필드가 없도록 하세요. 값이 없는 필드는 문맥을 참고하여 내용을 생성하세요.
     11. isNextStep을 1로 판단하였다면, 마지막으로 {feedback}의 내용이 반환할 결과에 반영되었는지 확인하세요.
     {{
         "isNextStep": 0 또는 1,
