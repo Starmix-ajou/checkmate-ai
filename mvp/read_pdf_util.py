@@ -72,11 +72,6 @@ async def test_pdf_extraction(predefined_definition: str) -> str:
         asset_dir=os.path.join(os.path.dirname(__file__), "asset")
         os.makedirs(asset_dir, exist_ok=True)
         
-        # Google Drive 링크인 경우 변환
-        if "drive.google.com" in predefined_definition:
-            predefined_definition = convert_google_drive_link(predefined_definition)
-            logger.info(f"✅ Google Drive 링크 변환 완료: {predefined_definition}")
-        
         filename=os.path.basename(predefined_definition)
         
         async with aiohttp.ClientSession() as session:
@@ -138,7 +133,7 @@ async def test_pdf_extraction(predefined_definition: str) -> str:
 
 async def main():
     # 테스트할 PDF 파일 경로
-    test_pdf_path = "https://drive.google.com/file/d/1HOcZ_GMNMU32ErPNFlGAacD7SLpb0QUN/view?usp=sharing"  # 테스트할 PDF 파일 경로를 지정해주세요
+    test_pdf_path = "https://ax1nm9kw34v6.objectstorage.ap-chuncheon-1.oci.customer-oci.com/n/ax1nm9kw34v6/b/checkmate-assets/o/%E1%84%8C%E1%85%A6%E1%84%86%E1%85%A9%E1%86%A8%20%E1%84%8B%E1%85%A5%E1%86%B9%E1%84%82%E1%85%B3%E1%86%AB%20%E1%84%86%E1%85%AE%E1%86%AB%E1%84%89%E1%85%A5.pdf"  # 테스트할 PDF 파일 경로를 지정해주세요
     
     try:
         # PDF 텍스트 추출 테스트
