@@ -37,23 +37,23 @@ async def test_mongodb_connection():
         raise e
     
 async def get_feature_collection():
-    print("⚙️ get_feature_collection 호출")
+    logger.info("⚙️ get_feature_collection 호출")
     return db['features']
 
 async def get_epic_collection():
-    print("⚙️ get_epic_collection 호출")
+    logger.info("⚙️ get_epic_collection 호출")
     return db['epics']
 
 async def get_task_collection():
-    print("⚙️ get_task_collection 호출")
+    logger.info("⚙️ get_task_collection 호출")
     return db['tasks']
 
 async def get_project_collection():
-    print("⚙️ get_project_collection 호출")
+    logger.info("⚙️ get_project_collection 호출")
     return db['projects']
 
 async def get_user_collection():
-    print("⚙️ get_user_collection 호출")
+    logger.info("⚙️ get_user_collection 호출")
     return db['users']
 
 
