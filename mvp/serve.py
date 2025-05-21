@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -77,6 +78,7 @@ app = FastAPI(docs_url="/docs")
 
 @app.on_event("startup")
 async def startup_event():
+    logger.info(f"🚀 Uvicorn 서버 시작 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     try:
         # Redis 연결 테스트
         await test_redis_connection()
@@ -102,6 +104,7 @@ async def global_error_handler(request: Request, exc: Exception):
 async def post_definition(request: FeatureDefinitionPOSTRequest):
     try:
         logger.info(f"📨 POST /definition 요청 수신: {request}")
+        logger.info(f"📨 요청 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         result = await create_feature_definition(request.email, request.description, request.definitionUrl)
         logger.info(f"✅ 처리 결과: {result}")
         return result
@@ -116,6 +119,7 @@ async def post_definition(request: FeatureDefinitionPOSTRequest):
 async def put_definition(request: FeatureDefinitionPUTRequest):
     try:
         logger.info(f"📨 PUT /definition 요청 수신: {request}")
+        logger.info(f"📨 요청 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         result = await update_feature_definition(request.email, request.feedback)
         logger.info(f"✅ 처리 결과: {result}")
         return result
@@ -130,6 +134,7 @@ async def put_definition(request: FeatureDefinitionPUTRequest):
 async def post_specification(request: FeatureSpecificationPOSTRequest):
     try:
         logger.info(f"📨 POST /specification 요청 수신: {request}")
+        logger.info(f"📨 요청 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         result = await create_feature_specification(request.email)
         logger.info(f"✅ 처리 결과: {result}")
         return result
@@ -144,6 +149,7 @@ async def post_specification(request: FeatureSpecificationPOSTRequest):
 async def put_specification(request: FeatureSpecificationPUTRequest):
     try:
         logger.info(f"📨 PUT /specification 요청 수신: {request}")
+        logger.info(f"📨 요청 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         result = await update_feature_specification(request.email, request.feedback, request.createdFeatures, request.modifiedFeatures, request.deletedFeatures)
         logger.info(f"✅ 처리 결과: {result}")
         return result
@@ -158,6 +164,7 @@ async def put_specification(request: FeatureSpecificationPUTRequest):
 async def post_epic(request: EpicPOSTRequest):
     try:
         logger.info(f"📨 POST /sprint 요청 수신: {request}")
+        logger.info(f"📨 요청 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         result = await create_sprint(request.projectId, request.pendingTasksIds)
         logger.info(f"✅ 처리 결과: {result}")
         return result
