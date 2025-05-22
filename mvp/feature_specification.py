@@ -51,25 +51,29 @@ def calculate_priority(expectedDays: int, difficulty: int) -> int:
         difficulty (int): 개발 난이도
         
     Returns:
-        int: 우선순위가 계산된 데이터
+        개발 예상 시간(expectedDays: 0~30일)과 난이도(difficulty: 1~5)를
+        선형 정규화 후 가중합하여 1~300 범위의 우선순위로 매핑.
     """
-    
-    # 시간과 난이도의 가중치 (시간이 더 중요하다고 가정)
-    time_weight = 0.6
-    difficulty_weight = 0.4
-    
-    # 정규화된 시간 점수 (시간이 짧을수록 점수가 높음)
-    time_score = 1 - (expectedDays / 30)  # 30일을 최대치로 가정
-        
-    # 정규화된 난이도 점수 (난이도가 낮을수록 점수가 높음)
-    difficulty_score = 1 - ((difficulty - 1) / 4)
-        
-    # 최종 우선순위 점수 계산
-    priority_score = (time_score * time_weight) + (difficulty_score * difficulty_weight)
-        
-    # 1-300 범위로 변환 (점수가 높을수록 우선순위가 높음)
-    priority = math.ceil(priority_score * 300)
-    
+    # 최대값/최소값 정의
+    MAX_DAYS = 30
+    MIN_DIFF, MAX_DIFF = 1, 5
+
+    # 가중치 (시간 80%, 난이도 20%)
+    w_time = 0.8
+    w_diff = 0.2
+
+    # 1) 시간 정규화: [0,1], 값이 작을수록(개발기간 짧을수록) 1에 가까움
+    time_score = 1 - (expectedDays / MAX_DAYS)
+
+    # 2) 난이도 정규화: [0,1], 값이 작을수록(난이도 낮을수록) 1에 가까움
+    diff_score = (MAX_DIFF - difficulty) / (MAX_DIFF - MIN_DIFF)
+
+    # 3) 가중합(raw score)
+    raw = w_time * time_score + w_diff * diff_score
+    # raw ∈ [0,1]
+
+    # 4) 1~300 범위로 선형 매핑
+    priority = math.ceil(raw * 299) + 1
     return priority
 
 
@@ -122,7 +126,7 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         logger.error(f"project_end_date 접근 중 오류 발생: {str(e)}")
         raise
 
-    print(f"프로젝트 아이디: {projectId}")
+    #print(f"프로젝트 아이디: {projectId}")
     
     try:
         logger.info(f"🔍 Redis에서 프로젝트 멤버 정보 불러오기 시작. 조회 key값: {email}")
@@ -198,29 +202,29 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     주의사항:
     1. 위 기능 정의서에 나열된 모든 기능에 대해 상세 명세를 작성해주세요.
     2. 새로운 기능을 추가하거나 기존 기능을 제외하지 마세요.
-    3. 각 기능의 이름은 기능 정의서와 동일하게 사용하고 절대 임의로 바꾸지 마세요.
+    3. 각 기능의 name은 기능 정의서와 동일하게 사용하고 절대 임의로 바꾸지 마세요.
     4. 담당자 할당 시 각 멤버의 역할(BE/FE)을 고려해주세요.
     5. 기능 별 startDate와 endDate는 프로젝트 시작일인 {startDate}와 종료일인 {endDate} 사이에 있어야 하며, 그 기간이 expected_days와 일치해야 합니다.
-    6. input과 output은 반드시 string으로 반환하세요.
-    7. 반드시 아래의 JSON 형식을 정확하게 따라주세요.
-    8. 모든 문자열은 쌍따옴표(")로 감싸주세요.
-    9. 객체의 마지막 항목에는 쉼표를 넣지 마세요.
-    10. 배열의 마지막 항목 뒤에도 쉼표를 넣지 마세요.
-    11. difficulty는 1 이상 5 이하의 정수여야 합니다.
-    12. startDate와 endDate는 "YYYY-MM-DD" 형식이어야 합니다.
+    6. difficulty는 1 이상 5 이하의 정수여야 합니다.
+    7. startDate와 endDate는 "YYYY-MM-DD" 형식이어야 합니다.
+    8. useCase는 기능의 사용 사례 설명을 작성해주세요.
+    9. input은 기능에 필요한 입력 데이터를 작성해주세요.
+    10. output은 기능의 출력 결과를 작성해주세요.
+    11. precondition은 기능 실행 전 만족해야 할 조건을 작성해주세요.
+    12. postcondition은 기능 실행 후 보장되는 조건을 작성해주세요.
     13. 각 기능에 대해 다음 항목들을 JSON 형식으로 응답해주세요:
     {{
         "features": [
             {{
-                "name": "기능명",
-                "useCase": "기능의 사용 사례 설명",
-                "input": "기능에 필요한 입력 데이터",
-                "output": "기능의 출력 결과",
-                "precondition": "기능 실행 전 만족해야 할 조건",
-                "postcondition": "기능 실행 후 보장되는 조건",
-                "startDate": "YYYY-MM-DD",
-                "endDate": "YYYY-MM-DD",
-                "difficulty": 1
+                "name": "string",
+                "useCase": "string",
+                "input": "string",
+                "output": "string",
+                "precondition": "string",
+                "postcondition": "string",
+                "startDate": str(YYYY-MM-DD),
+                "endDate": str(YYYY-MM-DD),
+                "difficulty": int
             }}
         ]
     }}
@@ -228,7 +232,6 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
     
     # 프롬프트에 데이터 전달
     message = prompt.format_messages(
-        #stacks=stacks,
         project_members=project_members,
         feature_data=feature_data,
         startDate=project_start_date,
@@ -247,17 +250,17 @@ async def create_feature_specification(email: str) -> Dict[str, Any]:
         except Exception as e:
             logger.error(f"GPT util 사용 중 오류 발생: {str(e)}")
             raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}") from e
-        print(f"📌 응답 파싱 후 gpt_result 타입: {type(gpt_result)}")   # 현재 List 반환 중
-        print(f"📌 gpt_result 내용: {gpt_result}")
+        #print(f"📌 응답 파싱 후 gpt_result 타입: {type(gpt_result)}")   # 현재 List 반환 중
+        #print(f"📌 gpt_result 내용: {gpt_result}")
         
         try:
             feature_list = gpt_result["features"]
         except Exception as e:
             logger.error(f"📌 gpt result에 list 형식으로 접근할 수 없습니다: {str(e)}")
             raise Exception(f"📌 gpt result에 list 형식으로 접근할 수 없습니다: {str(e)}") from e
-        print(f"📌 feature_list 타입: {type(feature_list)}")   # 여기에서 List 반환되어야 함
+        #print(f"📌 feature_list 타입: {type(feature_list)}")   # 여기에서 List 반환되어야 함
         for i in range(len(feature_list)):
-            print(f"📌 feature_list 하위 항목 타입: {type(feature_list[i])}")   # 여기에서 모두 Dict 반환되어야 함 (PASS)
+            #print(f"📌 feature_list 하위 항목 타입: {type(feature_list[i])}")   # 여기에서 모두 Dict 반환되어야 함 (PASS)
             if type(feature_list[i]) != dict:
                 raise ValueError("feature_list 하위 항목은 모두 Dict 형식이어야 합니다.")
         
@@ -483,16 +486,16 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
         "isNextStep": 0 또는 1,
         "features": [
             {{
-                "name": "기능명",
-                "useCase": "사용 사례",
-                "input": "입력 데이터",
-                "output": "출력 결과",
-                "precondition": "기능 실행 전 만족해야 할 조건",
-                "postcondition": "기능 실행 후 보장되는 조건",
-                "startDate": "YYYY-MM-DD로 정의되는 기능 시작일",
-                "endDate": "YYYY-MM-DD로 정의되는 기능 종료일"
-                "difficulty": 1-5,
-                "priority": 정수
+                "name": "string",
+                "useCase": "string",
+                "input": "string",
+                "output": "string",
+                "precondition": "string",
+                "postcondition": "string",
+                "startDate": str(YYYY-MM-DD),
+                "endDate": str(YYYY-MM-DD),
+                "difficulty": int,
+                "priority": int
             }}
         ]
     }}
@@ -570,52 +573,6 @@ async def update_feature_specification(email: str, feedback: str, createdFeature
         logger.error(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True)
         raise Exception(f"GPT API 응답 처리 중 오류 발생: {str(e)}", exc_info=True) from e
 
-# 업데이트된 기능 정보를 기존 기능 리스트와 융합
-#     updated_map = {feature["name"]: feature for feature in feature_list}
-#     merged_features = []
-    
-#     # 기존 기능 리스트 순회
-#     for current_feature in current_features:
-#         feature_name = current_feature["name"]
-#         if feature_name in updated_map:
-#             # 업데이트된 기능이 있는 경우
-#             updated = updated_map[feature_name]
-#             merged_feature = current_feature.copy()
-            
-#             # expected_days나 difficulty가 변경되었는지 확인
-#             if current_feature["expectedDays"] is not None and updated["expectedDays"] != current_feature["expectedDays"]:
-#                 expected_days_changed = True
-#             if current_feature["difficulty"] is not None and updated["difficulty"] != current_feature["difficulty"]:
-#                 difficulty_changed = True
-            
-#             merged_feature.update({
-#                 "useCase": updated["useCase"],
-#                 "input": updated["input"],
-#                 "output": updated["output"],
-#                 "precondition": updated["precondition"],
-#                 "postcondition": updated["postcondition"],
-#                 "expectedDays": updated["expectedDays"],
-#                 "startDate": updated["startDate"],
-#                 "endDate": updated["endDate"],
-#                 "difficulty": updated["difficulty"]
-#             })
-            
-#             # priority 처리
-#             if "priority" in updated:
-#                 # GPT가 직접 priority를 지정한 경우
-#                 merged_feature["priority"] = updated["priority"]
-#             elif expected_days_changed or difficulty_changed:
-#                 # expected_days나 difficulty가 변경된 경우 우선순위 재계산
-#                 merged_feature["priority"] = calculate_priority(merged_feature["expectedDays"], merged_feature["difficulty"])
-#             else:
-#                 # 변경사항이 없는 경우 기존 priority 유지
-#                 merged_feature["priority"] = current_feature["priority"]
-            
-#             merged_features.append(merged_feature)
-#         else:
-#             # 업데이트되지 않은 기능은 그대로 유지
-#             merged_features.append(current_feature)
-    
     try:
         merged_features = gpt_result["features"]
     except Exception as e:
