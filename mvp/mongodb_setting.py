@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from datetime import datetime
 
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -28,36 +29,32 @@ async def test_mongodb_connection():
     #logger.info(f"Mock MongoDB 연결 설정: uri={MOCK_MONGODB_URI}, db={MOCK_DB_NAME}")
     try:
         pong = await mongo_client.admin.command('ping')
-        print(f"MongoDB 연결 성공: {pong}")
         logger.info(f"MongoDB 연결 성공: {pong}")
         return True
     except Exception as e:
-        print(f"MongoDB 연결 실패: {e}")
         logger.error(f"MongoDB 연결 실패: {e}")
         raise e
     
 async def get_feature_collection():
-    logger.info("⚙️ get_feature_collection 호출")
+    logger.info(f"🔍 get_feature_collection 호출 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     return db['features']
 
 async def get_epic_collection():
-    logger.info("⚙️ get_epic_collection 호출")
+    logger.info(f"🔍 get_epic_collection 호출 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     return db['epics']
 
 async def get_task_collection():
-    logger.info("⚙️ get_task_collection 호출")
+    logger.info(f"🔍 get_task_collection 호출 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     return db['tasks']
 
 async def get_project_collection():
-    logger.info("⚙️ get_project_collection 호출")
+    logger.info(f"🔍 get_project_collection 호출 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     return db['projects']
 
 async def get_user_collection():
-    logger.info("⚙️ get_user_collection 호출")
+    logger.info(f"🔍 get_user_collection 호출 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     return db['users']
 
 
 if __name__ == "__main__":
-    print(MONGODB_URI)
-    print(DB_NAME)
     asyncio.run(test_mongodb_connection())

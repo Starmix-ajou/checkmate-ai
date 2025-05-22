@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+from datetime import datetime
 from typing import Any, Dict, List, Union
 
 import redis.asyncio as aioredis
@@ -13,7 +14,7 @@ REDIS_HOST = os.getenv('REDIS_HOST')
 REDIS_PORT = int(os.getenv('REDIS_PORT'))
 REDIS_PWD = os.getenv('REDIS_PASSWORD')
 
-logger.info(f"Redis 연결 설정: host={REDIS_HOST}, port={REDIS_PORT}, password={'*' * len(REDIS_PWD) if REDIS_PWD else None}")
+#logger.info(f"Redis 연결 설정: host={REDIS_HOST}, port={REDIS_PORT}, password={'*' * len(REDIS_PWD) if REDIS_PWD else None}")
 
 redis_client = aioredis.Redis(
     host=REDIS_HOST,
@@ -35,6 +36,7 @@ async def test_redis_connection():
         raise Exception(f"Redis 연결 실패: {str(e)}", exc_info=True) from e
 
 async def save_to_redis(key: str, data: Any):
+    logger.info(f"🔍 Redis 데이터 저장 호출 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     try:
         # 딕셔너리를 JSON 문자열로 직렬화
         if isinstance(data, dict) or isinstance(data, list) or isinstance(data, str):
@@ -48,6 +50,7 @@ async def save_to_redis(key: str, data: Any):
         raise Exception(f"❌ Redis 저장 중 오류 발생: {str(e)}", exc_info=True) from e
 
 async def load_from_redis(key: str) -> Any:
+    logger.info(f"🔍 Redis 데이터 로드 호출 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     try:
         data = await redis_client.get(key)
         if data:
@@ -61,7 +64,4 @@ async def load_from_redis(key: str) -> Any:
         raise Exception(f"❌ Redis 로드 중 오류 발생: {str(e)}", exc_info=True) from e
 
 if __name__ == "__main__":
-    print(REDIS_HOST)
-    print(REDIS_PORT)
-    print(REDIS_PWD)
     asyncio.run(test_redis_connection())
