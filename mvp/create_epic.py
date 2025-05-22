@@ -59,57 +59,49 @@ async def create_task(epic_id: str, feature_id: str) -> List[Dict[str, Any]]:
     
     if feature is None:
         raise ValueError(f"Feature not found for feature_id={feature_id}")
-    epic = feature
     
     task_creation_prompt = ChatPromptTemplate.from_template("""
     당신은 애자일 마스터입니다. 당신의 주요 언어는 한국어입니다. 당신의 업무는 주어진 epic에 대한 정보를 바탕으로 각 epic의 하위 task를 정의하는 것입니다.
     이때 지켜야 하는 규칙이 있습니다.
-    1. 반드시 하나 이상의 task를 생성해야 합니다. task를 생성할 때 그 내용이 {epic_description}과 관련이 있어야 합니다.
-    2. task의 이름을 자연어로 정의해 주세요. task는 {epic_name}과 유사한 방식으로 정의하세요.
-    3. startDate와 endDate는 반드시 {epic_startDate}와 {epic_endDate} 사이에 있어야 합니다. 절대로 이 범위를 벗어나서는 안됩니다.
+    1. 반드시 하나 이상의 task를 생성해야 합니다. task는 {epic_description}를 참고하여 관련된 내용을 정의해야 합니다.
+    2. task의 title과 description은 개발자가 이해하기 쉽고 실제로 개발이 이루어지는 단위까지 구체적으로 작성하세요. title의 예는 "~ 기능 API 개발"이고, description의 예는 "~ 기능을 구현하기 위한 벡앤드와 프론트엔드 사이의 API를 명세하고 코드를 작성"입니다.
+    3. startDate와 endDate는 반드시 {epic_startDate}와 {epic_endDate} 사이에 있어야 합니다. 절대로 이 범위를 벗어나서는 안됩니다. 
     4. priority는 반드시 0 이상 {epic_priority} 이하의 정수여야 합니다. 절대 이 범위를 벗어나서는 안됩니다.
     5. expected_workhours는 반드시 0 이상 {epic_expected_workhours} 이하의 정수여야 합니다. 절대 이 범위를 벗어나서는 안됩니다.
     6. assignee는 반드시 {project_members}에 존재하는 멤버여야 합니다. 절대 이를 어겨선 안됩니다. 반환할 때는 FE, BE와 같은 포지션을 제외하고 이름만 반환하세요.
     7. assignee는 반드시 한 명이어야 합니다. 절대 여러 명이 할당되어서는 안됩니다.
-    8. {epic_id}는 반드시 절대로 바꾸지 말고 주어진 값을 그대로 "epic" 필드에 기입하세요.
+   
+    현재 task를 정의하는 에픽에 대한 일반 정보는 다음과 같습니다:
+    {epic}
+    현재 프로젝트에 참여 중인 멤버들의 정보는 다음과 같습니다:
+    {project_members}
     
     결과를 다음과 같은 형식으로 반환해 주세요.
     {{
         "tasks": [
             {{
-                "title": "댓글 추가 API 개발",
-                "description": "댓글을 추가하기 위한 벡앤드와 프론트엔드 사이의 API를 명세하고 코드를 작성",
-                "assignee": "홍길동",
-                "startDate": "2024-03-01",
-                "endDate": "2024-03-03",
-                "priority": 100,
-                "expected_workhours": 1,
-                "epic": "epic_id"
+                "title": "string",
+                "description": "string",
+                "assignee": "string",
+                "startDate": str(YYYY-MM-DD),
+                "endDate": str(YYYY-MM-DD),
+                "priority": int,
+                "expected_workhours": float
             }},
             ...
         ]
     }}
-    
-    현재 task를 정의하는 에픽에 대한 일반 정보:
-    {epic}
-    
-    현재 epic의 id:
-    {epic_id}
-    
-    현재 프로젝트 멤버 정보:
-    {project_members}
     """)
     
     messages = task_creation_prompt.format_messages(
-        epic=epic,
+        epic = feature,
         project_members=project_members,
         epic_name=feature["name"],
         epic_description="사용 시나리오: "+feature["useCase"]+"\n"+"입력 데이터: "+feature["input"]+"\n"+"출력 데이터: "+feature["output"],
         epic_startDate=feature["startDate"],
         epic_endDate=feature["endDate"],
         epic_priority=feature["priority"],
-        epic_expected_workhours=feature["expectedDays"],
-        epic_id=epic_id
+        epic_expected_workhours=feature["expectedDays"]
     )
     
     # LLM Config
@@ -143,10 +135,15 @@ async def create_task(epic_id: str, feature_id: str) -> List[Dict[str, Any]]:
             "endDate": task["endDate"],
             "priority": task["priority"],
             "expected_workhours": task["expected_workhours"],
-            "epic": task["epic"]
+            "epic": epic_id
         }
+        if task_data["startDate"] <= feature["startDate"]:
+            logger.warning(f"⚠️ task {task['title']}의 startDate가 epic의 startDate보다 이전입니다. 이를 바탕으로 정의된 task의 startDate를 epic의 startDate로 조정합니다.")
+            task_data["startDate"] = feature["startDate"]
+        if task_data["endDate"] >= feature["endDate"]:
+            logger.warning(f"⚠️ task {task['title']}의 endDate가 epic의 endDate보다 이후입니다. 이를 바탕으로 정의된 task의 endDate를 epic의 endDate로 조정합니다.")
+            task_data["endDate"] = feature["endDate"]
         task_to_store.append(task_data)
-    
     logger.info(f"🔍 epic {epic_id}에 속한 task 정의 완료: {task_to_store}")
     return task_to_store
 
@@ -203,14 +200,18 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
         epic["prioritySum"] = epic_priority_sum
         logger.info(f"🔍 Epic {epic['title']}의 우선순위 총합: {epic_priority_sum}")
         tasks.extend(current_epic_tasks)
+        logger.info(f"🔍⭐️ epic {epic_id}의 '정렬 전' task 개수: {len(tasks)}개")
         tasks.sort(key=lambda x: x["priority"], reverse=True)
+        logger.info(f"🔍⭐️ epic {epic_id}의 '정렬 후' task 개수: {len(tasks)}개")
         logger.info(f"⚙️ epic {epic_id}까지의 우선순위에 따른 task 정렬 결과: {tasks}")
     logger.info(f"✅ 모든 epic에 대한 task들 정의 결과: {tasks}")
     
     # 누적 우선순위 값이 높은 순서대로 epic 정렬
     try:
+        logger.info(f"🔍⭐️ epic 우선순위에 따른 '정렬 전' epic 개수: {len(epics)}개")
         epics.sort(key=lambda x: x["prioritySum"], reverse=True)
-        logger.info(f"✅ Epic 우선순위에 따른 정렬 완료: {epics}")
+        logger.info(f"🔍⭐️ epic 우선순위에 따른 '정렬 후' epic 개수: {len(epics)}개")
+        logger.info(f"⚙️ epic 우선순위에 따른 정렬 결과: {epics}")
     except Exception as e:
         logger.error(f"🚨 Epic 우선순위에 따른 정렬 중 오류 발생: {e}", exc_info=True)
         raise e
@@ -305,6 +306,8 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
         tasks_by_epic.append(epic_tasks)
     assert len(tasks_by_epic) > 0, "tasks_by_epic 정의에 실패했습니다."
     
+    logger.info(f"❗️ tasks_by_epic (에픽 별로 정의된 태스크 목록입니다. 다음의 항목이 중복된 내용 없이 잘 구성되어 있는지 반드시 확인하세요): {tasks_by_epic}")
+    
     ### Sprint 정의하기
     sprint_prompt = ChatPromptTemplate.from_template("""
     당신은 애자일 마스터입니다. 당신의 업무는 주어지는 Epic과 Epic별 Task의 정보를 바탕으로 적절한 Sprint Backlog를 생성하는 것입니다.
@@ -313,18 +316,20 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
     1. 현재 설정된 스프린트의 주기는 {sprint_days}일입니다. {project_start_date}와 {project_end_date}를 사용해서 전체 스프린트의 개수와 각 스프린트의 시작일, 종료일을 먼저 구성하세요.
     2. 각 스프린트에는 {epics}로부터 정의된 epic들이 포함되어야 합니다. 각 epic마다 "epicId" 필드가 존재하고, 각 epic에는 "tasks" 필드가 존재합니다. 스프린트에 epic을 추가했다면 해당 epic의 모든 정보를 함께 포함하세요.
     3. {epics}는 priority가 높은 순서대로 이미 정렬된 데이터이므로, 각 스프린트에 해당 정보들을 정리할 때 되도록 순서대로 정리하세요. {epics}는 반환 형식에서 정의된 형식과 동일한 형식으로 정의되어 있음을 참고하세요.
-    4. sprint의 구성이 완료되었다면 각 epic에서 "tasks" 필드 하위에 딕셔너리의 리스트로 정의된 모든 task의 "expected_workhours" 필드를 모두 합산하여 해당 스프린트의 총 작업량을 계산하세요.
+    4. 스프린트의 구성이 완료되었다면 각 epic에서 "tasks" 필드 하위에 딕셔너리의 리스트로 정의된 모든 task의 "expected_workhours" 필드를 모두 합산하여 해당 스프린트의 총 작업량을 계산하세요.
     5. 계산된 총 작업량이 {eff_mandays}를 초과하는지 검사하세요. 만약 초과한다면 초과된 작업량을 줄이기 위해 각 task의 expected_workhours를 조정하세요.
     6. 한 번 더 조정된 작업량이 {eff_mandays}를 초과하지 않는지 검토하세요. 만약 초과한다면 초과된 작업량을 줄이기 위해 각 task의 expected_workhours를 한 번 더 조정하세요.
-    7. sprint_days, eff_mandays, workhours_per_day를 계산에 사용한 값 그대로 반환하세요. 
-    8. epicId는 반드시 절대로 바꾸지 마세요. 다시 한 번 말합니다, epicId는 절대로 바꾸지 말고 필요한 곳에 그대로 반환하세요.
+    7. sprint_days, eff_mandays, workhours_per_day를 계산에 사용한 값 그대로 반환하세요.
+    8. {epics}안에 정의된 epicId는 반드시 그대로 반환하세요. 다시 한 번 말합니다, {epics}안에 정의된 epicId는 절대로 바꾸지 말고 필요한 곳에 그대로 반환하세요.
+    9. 스프린트의 description은 해당 스프린트에 포함된 epic들의 성격을 정의할 수 있는 하나의 문장으로 작성하고, 스프린트의 title은 description을 요약하여 제목으로 정의하세요.
+    10. {epics}안에 정의되어 있는 epic과 task의 title, description 정보는 되도록 수정하지 마세요. 당신의 임무는 궁극적으로 epic과 task로부터 스프린트를 정의하는 것입니다.
     
     결과를 다음과 같은 형식으로 반환하세요.
     {{
         "sprints": [
         {{
-            "title": "스프린트 1",
-            "description": "스프린트 1은 댓글 관련 기능들을 개발하는 스프린트입니다.",
+            "title": "string",
+            "description": "string",
             "startDate": str(YYYY-MM-DD),
             "endDate": str(YYYY-MM-DD),
             "epics": [
@@ -332,13 +337,13 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
                 "epicId": "string",
                 "tasks": [
                 {{
-                    "title": "댓글 추가 API 개발",
-                    "description": "댓글을 추가하기 위한 벡앤드와 프론트엔드 사이의 API를 명세하고 코드를 작성",
-                    "assignee": "Alicia",
+                    "title": "string",
+                    "description": "string",
+                    "assignee": "string",
                     "startDate": str(YYYY-MM-DD),
                     "endDate": str(YYYY-MM-DD),
-                    "expected_workhours": 1,
-                    "priority": 100
+                    "expected_workhours": float,
+                    "priority": int
                 }},
                 ...
                 ]
@@ -348,10 +353,10 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
         }},
         ...
         ]
-        "sprint_days": 14,
-        "eff_mandays": 100,
-        "workhours_per_day": 8,
-        "number_of_sprints": 1
+        "sprint_days": int,
+        "eff_mandays": float,
+        "workhours_per_day": int,
+        "number_of_sprints": int
     }}
     """)
     
@@ -385,10 +390,22 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]] 
     
     # GPT가 정의한 Sprint 정보 검토
     try:
-        sprint_days = gpt_result["sprint_days"]
+        gpt_sprint_days = gpt_result["sprint_days"]
+        if gpt_sprint_days is None:
+            logger.warning(f"⚠️ gpt_result로부터 sprint_days 정보를 추출할 수 없습니다. 기존에 책정된 스프린트 주기: {sprint_days}일을 사용합니다.")
+        else:
+            sprint_days = gpt_sprint_days
+        gpt_workhours_per_day = gpt_result["workhours_per_day"]
+        if gpt_workhours_per_day is None:
+            logger.warning(f"⚠️ gpt_result로부터 workhours_per_day 정보를 추출할 수 없습니다. 기존에 책정된 1일 작업 가능 시간: {workhours_per_day}시간을 사용합니다.")
+        else:
+            workhours_per_day = gpt_workhours_per_day
+        gpt_eff_mandays = gpt_result["eff_mandays"]
+        if gpt_eff_mandays is None:
+            logger.warning(f"⚠️ gpt_result로부터 eff_mandays 정보를 추출할 수 없습니다. 기존에 책정된 개발팀의 실제 작업 가능 시간: {eff_mandays}시간을 사용합니다.")
+        else:
+            eff_mandays = gpt_eff_mandays
         number_of_sprints = gpt_result["number_of_sprints"]
-        workhours_per_day = gpt_result["workhours_per_day"]
-        eff_mandays = gpt_result["eff_mandays"]
     except Exception as e:
         logger.error("gpt_result로부터 Sprint 관련 정보를 추출할 수 없음", exc_info=True)
         raise e
