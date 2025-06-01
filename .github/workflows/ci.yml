@@ -1,4 +1,5 @@
 name: Build and Push to OCI
+
 on:
   push:
     branches:
@@ -24,7 +25,26 @@ jobs:
             --platform linux/arm64 \
             -t $IMAGE_NAME:latest \
             -t $IMAGE_NAME:${{ github.sha }} \
-            . 
+            .
 
           docker push $IMAGE_NAME:latest
           docker push $IMAGE_NAME:${{ github.sha }}
+
+      - name: Checkout Manifest Repository
+        uses: actions/checkout@v4
+        with:
+          repository: starmix-ajou/checkmate-manifest
+          token: ${{ secrets.PAT_TOKEN }}
+          path: manifests
+
+      - name: Update Image Tag in Deployment YAML
+        run: |
+          sed -i "s|image: $IMAGE_NAME:.*|image: $IMAGE_NAME:${{ github.sha }}|" manifests/apps/ai/deployment.yaml
+
+      - name: Commit and Push Changes to Manifest Repo
+        run: |
+          cd manifests
+          git config user.name "yeonnnnjs"
+          git config user.email "sungyeon52@gmail.com"
+          git commit --allow-empty -am "Update image tag from checkmate-ai"
+          git push origin main
