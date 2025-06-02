@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -8,6 +9,7 @@ import redis.asyncio as aioredis
 from create_epic import create_sprint
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from feature_definition import (create_feature_definition,
                                 update_feature_definition)
@@ -25,6 +27,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+### 요청 모델
 class FeatureDefinitionPOSTRequest(BaseModel):
     email: str
     description: str
@@ -47,7 +50,10 @@ class FeatureSpecificationPUTRequest(BaseModel):
 class EpicPOSTRequest(BaseModel):
     projectId: str
     pendingTasksIds: Optional[List[str]] = None
+    startDate: datetime
 
+
+### 응답 모델
 class FeatureDefinitionSuggestion(BaseModel):
     features: List[str]
     suggestions: List[dict]
@@ -98,6 +104,15 @@ async def global_error_handler(request: Request, exc: Exception):
         status_code=500,
         content={"error": str(exc), "detail": "서버 및 API 실행 중 오류 발생"}
     )
+
+# 처리 시간 측정 CORS 설정
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    startTime = datetime.now()
+    response = await call_next(request)
+    logger.info(f"Processing Time (처리 소요 시간): {datetime.now() - startTime}")
+    return response
+
 
 # API Mapping
 @app.post("/project/definition", response_model=CreateFeatureDefinitionResponse)
@@ -165,7 +180,7 @@ async def post_epic(request: EpicPOSTRequest):
     try:
         logger.info(f"📨 POST /sprint 요청 수신: {request}")
         logger.info(f"📨 요청 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        result = await create_sprint(request.projectId, request.pendingTasksIds)
+        result = await create_sprint(request.projectId, request.pendingTasksIds, request.startDate)
         logger.info(f"✅ 처리 결과: {result}")
         return result
     except Exception as e:
