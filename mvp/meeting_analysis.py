@@ -13,6 +13,7 @@ from mongodb_setting import (get_epic_collection, get_project_collection,
                              get_user_collection)
 from openai import AsyncOpenAI
 from project_member_utils import get_project_members
+from redis_setting import load_from_redis, save_to_redis
 from transformers import (AutoModelForTokenClassification, AutoTokenizer,
                           TokenClassificationPipeline)
 
@@ -180,7 +181,7 @@ async def create_action_items_gpt(content: str):
     messages = action_items_prompt.format(content=content)
     llm = ChatOpenAI(
         model_name="gpt-4o-mini",
-        temperature=0.1,
+        temperature=0.0,
     )
     response = await llm.ainvoke(messages)
     try:
@@ -200,6 +201,7 @@ async def create_action_items_gpt(content: str):
     return action_items
 
 
+### ============================== Summary & Action Items Extraction ============================== ###
 async def create_summary(title: str, content: str, project_id: str):
     '''
     title: 사용자가 제목으로 회의록을 대표하는 내용을 입력한다고 가정 -> 요약의 첫 번째 뼈대로 사용
@@ -209,29 +211,27 @@ async def create_summary(title: str, content: str, project_id: str):
     
     print(f"회의 제목: {title}")
     meeting_summary_prompt = ChatPromptTemplate.from_template("""
-    당신은 회의록에서 중요한 대화 내용을 정리해 주는 AI 비서입니다. 당신의 주요 언어는 한국어입니다.
+    당신은 회의록에서 중요한 대화 내용을 정리해 주는 AI 비서입니다. 당신의 주요 언어는 한국어입니다. 정리한 내용은 반드시 Markdown 형식으로 반환해 주세요.
     당신의 업무는 회의 제목인 {title}을 바탕으로 회의록 {content}를 분석하여 중요한 대화 내용을 정리하는 것입니다.
-    반드시 Markdown 형식으로 반환해 주세요. 
-    Heading이 있는 경우, 요약 과정에서 Heading 레벨을 유지해 주세요. 예를 들어, 회의록에서 "## 회의 요약"이라는 제목이 있는 경우, 요약 과정에서도 "## 회의 요약"이라는 제목을 유지해 주세요.
+    {title}은 회의의 제목으로서 회의록에서 논의되는 내용을 대표하는 것으로 간주합니다. 따라서 회의록의 내용을 분석할 때 {title}을 적극적으로 참조하세요.
+    Heading이 있는 경우, 요약 과정에서도 Heading 레벨을 유지해 주세요. 예를 들어, 회의록에 "## 회의 요약"이라는 내용이 있는 경우, 요약 결과에도 "## 회의 요약"이 존재해야 합니다.
     회의록에서 중요한 대화 내용을 정리해 주세요. 중요한 대화 내용은 다음과 같습니다:
-    - 회의 안건 결정
-    - 회의 액션 아이템 결정
-    - 회의 결과 요약
+    - 회의 안건
+    - 안건에 대한 논의 결과
+    - 다음 회의 안건
+    - 중요한 피드백 및 의견
     
     현재 프로젝트에 참여 중인 멤버들의 정보는 다음과 같습니다:
     {project_members}
-    발화자가 특정될 경우 발화자의 이름과 발화 내용을 하나의 문장으로 함께 정리해 주세요.
+    멤버들 중에서 특정 이름을 가진 발화자가 있는 경우 발화자의 이름과 발화 내용을 하나의 문장으로 묶어서 정리해 주세요.
     
-    결과를 다음과 같은 형식으로 반환해 주세요:
+    결과를 다음과 같은 형식으로 반환하세요:
     {{
         "summary": "Markdown 형식의 회의 요약 string",
     }}
     """)
     
-    project_collection = await get_project_collection()
-    user_collection = await get_user_collection()
-    
-    project_members = await get_project_members(project_id, project_collection, user_collection)
+    project_members = await get_project_members(project_id)
     project_members_str = "\n".join([f"- {member}" for member in project_members])
     
     messages = meeting_summary_prompt.format(
@@ -270,6 +270,12 @@ async def analyze_meeting_document(meeting_id: str, title: str, content: str, pr
     summary = None
     
     action_items = await create_action_items_gpt(content)
+    try:
+        await save_to_redis(f"action_items:{project_id}", action_items)
+    except Exception as e:
+        logger.error(f"action_items 저장 중 오류 발생: {str(e)}", exc_info=True)
+        raise Exception(f"action_items 저장 중 오류 발생: {str(e)}", exc_info=True) from e
+    
     summary = await create_summary(title, content, project_id)
     
     # action_items에서 task들만 추출
@@ -284,7 +290,14 @@ async def analyze_meeting_document(meeting_id: str, title: str, content: str, pr
 
 
 async def convert_action_items_to_tasks(actionItems: List[str], project_id: str):
+    try:
+        action_items = await load_from_redis(f"action_items:{project_id}")
+    except Exception as e:
+        logger.error(f"action_items 로드 중 오류 발생: {str(e)}", exc_info=True)
+        raise Exception(f"action_items 로드 중 오류 발생: {str(e)}", exc_info=True) from e
+    
     assert action_items is not None, "정의되어 있는 전역 변수 action_items가 없습니다."
+    
     try:
         # 가지고 있는 action_items에서 actionItems에 존재하지 않는 task를 제거
         tasks_to_remove = [item for item in action_items if item["task"] not in actionItems]
@@ -323,7 +336,7 @@ async def convert_action_items_to_tasks(actionItems: List[str], project_id: str)
     }}
     """)
     
-    epics = await get_epic_collection().find({"projectId": project_id}).to_list(length=None)
+    epics = await get_epic_collection().find_many({"projectId": project_id})
     epics_str = "\n".join([f"- {epic['title']}: {epic['_id']}" for epic in epics])
     project_members = await get_project_members(project_id)
     
