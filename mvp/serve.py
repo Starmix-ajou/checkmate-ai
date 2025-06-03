@@ -8,13 +8,15 @@ import httpx
 import redis.asyncio as aioredis
 from create_epic import create_sprint
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from feature_definition import (create_feature_definition,
                                 update_feature_definition)
 from feature_specification import (create_feature_specification,
                                    update_feature_specification)
+from meeting_analysis import (analyze_meeting_document,
+                              convert_action_items_to_tasks)
 from mongodb_setting import test_mongodb_connection
 from pydantic import BaseModel
 from redis_setting import test_redis_connection
@@ -52,6 +54,16 @@ class EpicPOSTRequest(BaseModel):
     pendingTasksIds: Optional[List[str]] = None
     startDate: datetime
 
+class MeetingPOSTRequest(BaseModel):
+    meetingId: str
+    title: str
+    content: str
+    projectId: str
+
+class CreateActionItemPOSTRequest(BaseModel):
+    actionItems: List[str]
+    projectId: str
+
 
 ### 응답 모델
 class FeatureDefinitionSuggestion(BaseModel):
@@ -79,6 +91,14 @@ class FeedbackFeatureSpecificationResponse(BaseModel):
 class CreateSprintResponse(BaseModel):
     sprint: Dict[str, Any]
     epics: List[Dict[str, Any]]
+    
+class CreateMeetingResponse(BaseModel):
+    summary: str
+    actionItems: List[str]
+    
+class CreateActionItemResponse(BaseModel):
+    tasks: List[Dict[str, Any]]
+
 
 app = FastAPI(docs_url="/docs")
 
@@ -189,6 +209,40 @@ async def post_epic(request: EpicPOSTRequest):
             status_code=500,
             detail=f"스프린트 생성 중 오류 발생: {str(e)}"
         )
+
+
+@app.post("/meeting", response_model=CreateMeetingResponse)
+async def post_meeting(request: MeetingPOSTRequest):
+    try:
+        #content = await file.read()
+        #content = content.decode('utf-8')
+        logger.info(f"📨 POST /meeting 요청 수신: {request}")
+        logger.info(f"📨 요청 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        result = await analyze_meeting_document(request.meetingId, request.title, request.content, request.projectId)
+        logger.info(f"✅ 처리 결과: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"🔥 예외 발생: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"회의록 요약 중 오류 발생: {str(e)}"
+        )
+
+@app.post("/meeting/action-items", response_model=CreateActionItemResponse)
+async def post_action_items(request: CreateActionItemPOSTRequest):
+    try:
+        logger.info(f"📨 POST /meeting/action-items 요청 수신: {request}")
+        logger.info(f"📨 요청 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        result = await convert_action_items_to_tasks(request.actionItems, request.projectId)
+        logger.info(f"✅ 처리 결과: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"🔥 예외 발생: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"회의록 액션 아이템 생성 중 오류 발생: {str(e)}"
+        )
+
 
 # 실행 예시
 if __name__ == "__main__":

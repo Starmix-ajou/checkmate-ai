@@ -1,22 +1,17 @@
 import logging
 from typing import List, Tuple
 
+from mongodb_setting import get_project_collection, get_user_collection
 from motor.motor_asyncio import AsyncIOMotorCollection
 
 logger = logging.getLogger(__name__)
 
-async def get_project_members(
-    project_id: str,
-    project_collection: AsyncIOMotorCollection,
-    user_collection: AsyncIOMotorCollection
-) -> List[Tuple[str, str]]:
+async def get_project_members(project_id: str) -> List[Tuple[str, str]]:
     """
     프로젝트의 멤버 정보를 가져옵니다.
     
     Args:
         project_id (str): 프로젝트 ID
-        project_collection (AsyncIOMotorCollection): 프로젝트 컬렉션
-        user_collection (AsyncIOMotorCollection): 사용자 컬렉션
         
     Returns:
         List[Tuple[str, str]]: [(멤버 이름, 포지션 문자열), ...] 형태의 리스트
@@ -25,6 +20,10 @@ async def get_project_members(
         Exception: 프로젝트를 찾을 수 없거나 멤버 정보가 없는 경우
     """
     project_members = []
+    
+    project_collection = await get_project_collection()
+    user_collection = await get_user_collection()
+    
     try:
         project_data = await project_collection.find_one({"_id": project_id})
         if not project_data:
@@ -67,4 +66,14 @@ async def get_project_members(
     logger.info(f"📌 project_members: {project_members}")
     assert len(project_members) > 0, "project_members가 비어있습니다."
     
-    return project_members 
+    return project_members
+
+
+async def map_memberName_to_memberId(member_name: str, user_collection: AsyncIOMotorCollection) -> str:
+    user_info = await user_collection.find_one({"name": member_name})
+    
+    if not user_info:
+        logger.error(f"❌ 이름이 {member_name}인 사용자 정보를 찾을 수 없습니다")
+        raise Exception(f"이름이 {member_name}인 사용자 정보를 찾을 수 없습니다")
+    
+    return user_info["_id"]
