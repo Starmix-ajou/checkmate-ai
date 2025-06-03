@@ -16,7 +16,8 @@ from mongodb_setting import (get_epic_collection, get_feature_collection,
                              get_project_collection, get_task_collection,
                              get_user_collection)
 from openai import AsyncOpenAI
-from project_member_utils import get_project_members
+from project_member_utils import (get_project_members,
+                                  map_memberName_to_memberId)
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,6 @@ async def calculate_eff_mandays(efficiency_factor: float, number_of_developers: 
     logger.info(f"⚙️  Sprint별 효율적인 작업 배정 시간: {eff_mandays}시간")
     return eff_mandays
 
-
 async def calculate_percentiles(priority_dict: Dict[str, int]) -> Dict[str, int]:
     # 우선순위에 따라 정렬
     sorted_priority_values = sorted(priority_dict.values())
@@ -93,9 +93,15 @@ async def calculate_percentiles(priority_dict: Dict[str, int]) -> Dict[str, int]
 
 
 ########## =================== Create Task ===================== ##########
-async def create_task_from_feature(epic_id: str, feature_id: str) -> List[Dict[str, Any]]:
+'''
+경우마다 서로 다른 context 정보를 사용해서 Task를 구성하게 됨.
+1. create_task_from_feature: feature collection에 저장된 UseCase, input, output, priority, workhours, assignee, start & endDate 모두 사용
+2. create_task_from_epic: epic title, description & task title, description, assignee, priority, expected_workhours 사용
+3. create_task_from_null: project & epic의 description 사용
+'''
+async def create_task_from_feature(epic_id: str, feature_id: str, project_id: str) -> List[Dict[str, Any]]:
     ### feature 정보를 바탕으로 최초의 스프린트 구성 과정에서 epic=feaature에 대한 task를 생성하는 함수
-    logger.info(f"🔍 task 정의 시작: {feature_id}")
+    logger.info(f"🔍 기존의 feature 정보로부터 task 정의 시작: {feature_id}")
     assert feature_id is not None, "feature로부터 정의된 epic에 대해 task를 정의하는 스텝이므로 feature_id가 존재해야 합니다."
     feature = await feature_collection.find_one({"featureId": feature_id})
     
@@ -131,7 +137,7 @@ async def create_task_from_feature(epic_id: str, feature_id: str) -> List[Dict[s
         ]
     }}
     """)
-    
+    project_members = await get_project_members(project_id)
     assert project_members is not None, "project_members가 존재하지 않습니다."  # project_members가 전역 변수로서 참조 가능한지 반드시 사전 검사
     
     messages = task_creation_from_feature_prompt.format_messages(
@@ -189,9 +195,9 @@ async def create_task_from_feature(epic_id: str, feature_id: str) -> List[Dict[s
     return task_to_store
 
 
-async def create_task_from_epic(epic_id: str, task_db_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+async def create_task_from_epic(epic_id: str, project_id: str, task_db_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     ### 사용자가 직접 추가한 epic, task의 경우에는 null이 존재하는지 살펴보고, null이 아닌 내용을 바탕으로 epic의 description, task의 field를 생성해야 함
-    logger.info(f"🔍 task 정의 시작: {epic_id}")
+    logger.info(f"🔍 기존의 epic과 task 정보로부터 task 정의 시작: {epic_id}")
     assert epic_id is not None, "epic에 _id가 없습니다."    # epic은 id가 없으면 안 됨
     assert len(task_db_data) > 0, "task_db_data가 매개변수로 전달되지 않음."
     
@@ -244,7 +250,7 @@ async def create_task_from_epic(epic_id: str, task_db_data: List[Dict[str, Any]]
         ]
     }}
     """)
-    
+    project_members = await get_project_members(project_id)
     assert project_members is not None, "project_members가 존재하지 않습니다."  # project_members가 전역 변수로서 참조 가능한지 반드시 사전 검사
     
     messages = task_creation_from_epic_prompt.format_messages(
@@ -278,24 +284,100 @@ async def create_task_from_epic(epic_id: str, task_db_data: List[Dict[str, Any]]
             "title": task["title"],
             "description": task["description"],
             "assigneeId": task["assignee"],
-            "startDate": task["startDate"],
-            "endDate": task["endDate"],
+            "startDate": "",
+            "endDate": "",
             "priority": task["priority"],
             "expected_workhours": task["expected_workhours"],
             "epic": epic_id
         }
         task_to_store.append(task_data)
     logger.info(f"🔍 epic {epic_id}에 속한 task 정의 완료: {task_to_store}")
-    return task_to_store
+    epic_description = gpt_result["epic_description"]
+    return task_to_store, epic_description
+
+
+async def create_task_from_null(epic_id: str, project_id: str) -> List[Dict[str, Any]]:
+    logger.info(f"🔍 null로부터 task 정의 시작: {epic_id}")
+    task_creation_from_null_prompt = ChatPromptTemplate.from_template(
+    """
+    당신은 스프린트 마스터입니다. 당신의 업무는 주어지는 epic에 대해 적절한 task를 정의하는 것입니다.
+    epic에 포함된 정보가 매우 적기 때문에 {epic_description}과 project의 description 정보인 {project_description}을 참고해서 epic이 project 내에서 맡는 역할을 분석하세요.
+    이후 분석한 역할을 바탕으로 예상되는 task의 목록을 정의하고, task별로 구체적인 field 정보를 다음의 형식으로 반환하세요.
+    {{
+        "epic_description": "string",
+        "tasks": [
+            {{
+                "title": "string",
+                "description": "string",
+                "assignee": "string",
+                "priority": int,
+                "expected_workhours": float
+            }},
+            ...
+        ]
+    }}
+    
+    """)
+    project = await project_collection.find_one({"_id": project_id})
+    project_description = project["description"]
+    logger.info(f"🔍 context로 전달할 project description: {project_description}")
+    
+    epic = await epic_collection.find_one({"_id": epic_id})
+    epic_description = epic["description"]
+    logger.info(f"🔍 context로 전달할 epic description: {epic_description}")
+    
+    messages = task_creation_from_null_prompt.format_messages(
+        project_description = project_description,
+        epic_description = epic_description
+    )
+    
+    llm = ChatOpenAI(
+        model_name="gpt-4o-mini",
+        temperature=0.4,
+    )
+    response = await llm.ainvoke(messages)
+    try:
+        content = response.content
+        try:
+            gpt_result = extract_json_from_gpt_response(content)
+        except Exception as e:
+            logger.error(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True)
+            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True) from e
+    except Exception as e:
+        logger.error(f"GPT API 처리 중 오류 발생: {e}", exc_info=True)
+        raise Exception(f"GPT API 처리 중 오류 발생: {str(e)}", exc_info=True) from e
+    
+    task_to_store = []
+    tasks = gpt_result["tasks"]
+    logger.info("⚙️ gpt가 반환한 결과로부터 task 정보를 추출합니다.")
+    for task in tasks:
+        task_data = {
+            "title": task["title"],
+            "description": task["description"],
+            "assigneeId": task["assignee"],
+            "startDate": "",
+            "endDate": "",
+            "priority": task["priority"],
+            "expected_workhours": task["expected_workhours"],
+            "epic": epic_id
+        }
+        task_to_store.append(task_data)
+    logger.info(f"🔍 epic {epic_id}에 속한 task 정의 완료: {task_to_store}")
+    epic_description = gpt_result["epic_description"]
+    logger.info(f"🔍 epic {epic_id}의 description 정의 완료: {epic_description}")
+    
+    return task_to_store, epic_description
 
 
 ########## =================== Create Sprint ===================== ##########
 ### POST /sprint API가 참조하는 메인 함수
 async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]], start_date: datetime) -> Dict[str, Any]:
     logger.info(f"🔍 스프린트 생성 시작: {project_id}")
+    assert project_id is not None, "project_id가 존재하지 않습니다."
     
-    if not await init_collections():
-        raise Exception("collection 호출 및 초기화에 실패하였습니다. 다시 시도하세요.")
+    # DB 콜렉션 인스턴스 생성 및 초기화
+    initialize_db_collection = await init_collections()
+    assert initialize_db_collection is True, "collection 호출 및 초기화에 실패하였습니다. 다시 시도하세요."
     
     try:
         epics = await epic_collection.find({"projectId": project_id}).to_list(length=None)  # 모든 epic은 projectId가 존재함
@@ -306,8 +388,8 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
     logger.info("✅ MongoDB에서 epic 정보들 로드 완료")
     
     # 프로젝트 멤버 정보 구성
-    global project_members
-    project_members = await get_project_members(project_id, project_collection, user_collection)
+    project_members = await get_project_members(project_id)
+    assert project_members is not None, "project_members가 존재하지 않습니다."
     
     tasks = []
     for epic in epics:
@@ -318,18 +400,34 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
             task_db_data = await task_collection.find({"epic": epic_id}).to_list(length=None)
             logger.info(f'🔍 MongoDB: epic {epic["title"]}에 속한 task 정보: {task_db_data}')
         except Exception as e:
-            logger.error(f"🚨 epic {epic["title"]}의 task 로드 (MongoDB 사용) 중 오류 발생: {e}", exc_info=True)
+            logger.error(f"🚨 epic {epic['title']}의 task 로드 (MongoDB 사용) 중 오류 발생: {e}", exc_info=True)
             raise e
         try:
-            if len(task_db_data) == 0:  # epic에 속한 task가 없는 경우는 feature가 그대로 epic으로 정의된 경우에 한정됨 (= 스프린트 최초 생성)
+            if len(task_db_data) == 0:
                 logger.info(f"❌ epic {epic['title']}의 task 정보가 없습니다. 새로운 task 정보를 생성합니다.")
-                feature_id = epic["featureId"]
-                task_defined_from_feature = await create_task_from_feature(epic_id, feature_id)  # epic의 하위 task들을 직접 정의함
-                current_epic_tasks = task_defined_from_feature
+                if "featureId" in epic and epic["featureId"] is not None:
+                    logger.info(f"❌ - ✅ epic {epic['title']}에 featureId가 존재합니다.")
+                    feature_id = epic["featureId"]
+                    task_defined_from_feature = await create_task_from_feature(epic_id, feature_id, project_id)
+                    current_epic_tasks = task_defined_from_feature
+                else:
+                    logger.info(f"❌ - ❌ epic {epic['title']}의 featureId가 없습니다.")    # task 없는 epic만 존재하는 경우 (문제는, 이거를 어떻게 해석할 것인가)
+                    task_defined_from_null, epic_description = await create_task_from_null(epic_id, project_id)
+                    current_epic_tasks = task_defined_from_null
+                    if epic["description"] is None:
+                        epic["description"] = epic_description
+                        logger.info(f"🔍 epic {epic['title']}이 공란인 관계로 create_task_from_null에서 정의된 {epic_description}을 저장")
             else:
                 logger.info(f"✅ epic {epic['title']}의 task 정보가 이미 존재합니다. 기존 task 정보를 사용합니다.")
-                task_defined_from_null = await create_task_from_epic(epic_id, task_db_data)
+                try:
+                    task_defined_from_null, epic_description = await create_task_from_epic(epic_id, project_id, task_db_data)
+                except Exception as e:
+                    logger.error(f"🚨 epic {epic['title']}의 create_task_from_epic 호출 과정에서 오류 발생: {e}", exc_info=True)
+                    raise e
                 current_epic_tasks = task_defined_from_null
+                if epic["description"] is None:
+                    epic["description"] = epic_description
+                    logger.info(f"🔍 epic {epic['title']}이 공란인 관계로 create_task_from_epic에서 정의된 {epic_description}을 저장")
             
             logger.info(f"🔍 epic {epic['title']}의 task 정보: {current_epic_tasks}")
         except Exception as e:
@@ -448,25 +546,30 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
         tasks_by_epic.append(epic_tasks)
     assert len(tasks_by_epic) > 0, "tasks_by_epic 정의에 실패했습니다."
     
-    logger.info(f"❗️ tasks_by_epic (에픽 별로 정의된 태스크 목록입니다. 다음의 항목이 중복된 내용 없이 잘 구성되어 있는지 반드시 확인하세요): {tasks_by_epic}")
+    logger.warning(f"❗️ tasks_by_epic (에픽 별로 정의된 태스크 목록입니다. 다음의 항목이 중복된 내용 없이 잘 구성되어 있는지 반드시 확인하세요): {tasks_by_epic}")
     
     ### Sprint 정의하기
     sprint_prompt = ChatPromptTemplate.from_template("""
     당신은 애자일 마스터입니다. 당신의 업무는 주어지는 Epic과 Epic별 Task의 정보를 바탕으로 적절한 Sprint Backlog를 생성하는 것입니다.
     명심하세요. 당신의 주요 언어는 한국어입니다.
     다음의 과정을 반드시 순서대로 진행하고 모두 완료해야 합니다.
-    1. 현재 설정된 스프린트의 주기는 {sprint_days}일입니다. 날짜 {project_start_date}부터 {project_end_date}까지 프로젝트가 진행되므로 {sprint_days} 단위로 총 몇 개의 sprint가 구성될 수 있고, 각 sprint의 시작일과 종료일은 무엇인지 판단하세요.
-    2. 각 스프린트에는 {epics}에 정의된 epic들이 포함되어야 합니다. 각 epic마다 "epicId" 필드가 존재하고, 각 epic에는 "tasks" 필드가 존재합니다. 스프린트에 epic을 배정할 때 해당 epic의 task를 비롯한 모든 정보를 함께 포함하세요.
-    3. {epics}는 priority가 높은 순서대로 이미 정렬된 데이터이므로, 각 스프린트에 해당 정보들을 정리할 때 되도록 순서대로 정리하세요. {epics}는 반환 형식과 동일한 형태로 구성되어 있습니다.
-    4. 스프린트 별 epic 구성이 완료되었다면 각 epic에서 "tasks" 필드 하위에 딕셔너리의 리스트로 정의된 모든 task의 "expected_workhours" 필드를 모두 합산하여 sprint별 총 작업량을 계산하세요.
-    5. 계산된 총 작업량이 {eff_mandays}를 초과하는지 검사하세요. 만약 초과한다면 모든 task의 expected_workhours를 0.75 등의 고정 비율로 일관적으로 축소하여 {eff_mandays}를 초과하지 않도록 조정하세요.
-    6. 한 번 더 조정된 작업량이 {eff_mandays}를 초과하지 않는지 검토하세요. 만약 초과한다면 초과된 작업량을 줄이기 위해 모든 task의 expected_workhours를 한 번 더 조정하세요. 즉, 바로 앞 6번의 과정을 반복하세요.
-    7. sprint_days, eff_mandays, workhours_per_day를 계산에 사용한 값 그대로 반환하세요.
+    1. 현재 설정된 스프린트의 주기는 {sprint_days}일입니다. 날짜 {today}부터 {project_end_date}까지 프로젝트가 진행되므로 {sprint_days} 단위로 총 몇 개의 sprint가 구성될 수 있고, 각 sprint의 시작일과 종료일은 무엇인지 판단하세요.
+    2. 각 스프린트에는 {epics}에 정의된 epic이 최소 하나 이상 포함되어야 합니다. 각 epic마다 "epicId" 필드가 존재하고, 각 epic에는 "tasks" 필드가 존재하므로 스프린트에 epic을 배정할 때 해당 epic의 모든 정보를 누락없이 포함하세요.
+    3. {epics}는 priority가 높은 순서대로 정렬된 데이터이므로, 각 스프린트에 되도록 제공된 순서대로 epic을 추가하세요.
+    4. 스프린트 별 epic 구성이 완료되고 나면, 각 epic의 "tasks" 필드에서 "expected_workhours" 필드를 찾아 그 값을 모두 합산하여 sprint별 총 작업량을 계산하세요.
+    5. 계산된 총 작업량이 {eff_mandays}를 초과하는지 검사하세요. 만약 초과한다면 모든 task의 expected_workhours를 0.75배로 일괄되게 축소하세요.
+    6. 0.75배로 조정된 "expected_workhours"의 합산이 {eff_mandays}를 초과하는지 검토하세요. 초과할 경우, 모든 task의 expected_workhours를 0.5배로 한 번 더 바꾸세요. 초과하지 않는 경우에는 바꿀 필요 없이 다음 단계로 넘어가세요.
+    7. sprint_days, eff_mandays, workhours_per_day를 4~6번의 계산 과정에 사용한 값 그대로 반환하세요.
     8. {epics}안에 정의된 epicId는 반드시 그대로 반환하세요. 다시 한 번 말합니다, {epics}안에 정의된 epicId는 절대로 바꾸지 말고 필요한 곳에 그대로 반환하세요.
     9. 스프린트의 description은 해당 스프린트에 포함된 epic들의 성격을 정의할 수 있는 하나의 문장으로 작성하고, 스프린트의 title은 description을 요약하여 제목으로 정의하세요.
     
-    결과를 다음과 같은 형식으로 반환하세요. 이때, 만약 startDate와 endDate가 정의되지 않은 task가 존재한다면, sprint의 시작일과 종료일을 동일하게 부여하거나 예상치를 직접 부여하세요.
+    결과를 다음과 같은 형식으로 반환하세요. 이때, 만약 startDate와 endDate가 정의되지 않은 task가 존재한다면, sprint와 동일한 시작일, 종료일을 적용하세요. 
+    반드시 tasks의 모든 field가 값을 가지도록 구성하세요.
     {{
+        "sprint_days": int,
+        "eff_mandays": int,
+        "workhours_per_day": int,
+        "number_of_sprints": int
         "sprints": [
         {{
             "title": "string",
@@ -494,19 +597,14 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
         }},
         ...
         ]
-        "sprint_days": int,
-        "eff_mandays": int,
-        "workhours_per_day": int,
-        "number_of_sprints": int
     }}
     """)
     
     messages = sprint_prompt.format_messages(
         eff_mandays=eff_mandays,
         sprint_days=sprint_days,
-        project_days=project_days,
         workhours_per_day=workhours_per_day,
-        project_start_date=project_start_date,
+        today=start_date,
         project_end_date=project_end_date,
         epics=tasks_by_epic,
     )
@@ -530,26 +628,25 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
         raise e
     
     # GPT가 정의한 Sprint 정보 검토
-    try:
-        gpt_sprint_days = gpt_result["sprint_days"]
-        if gpt_sprint_days is None:
-            logger.warning(f"⚠️ gpt_result로부터 sprint_days 정보를 추출할 수 없습니다. 기존에 책정된 스프린트 주기: {sprint_days}일을 사용합니다.")
-        else:
-            sprint_days = int(round(gpt_sprint_days))
-        gpt_workhours_per_day = gpt_result["workhours_per_day"]
-        if gpt_workhours_per_day is None:
-            logger.warning(f"⚠️ gpt_result로부터 workhours_per_day 정보를 추출할 수 없습니다. 기존에 책정된 1일 작업 가능 시간: {workhours_per_day}시간을 사용합니다.")
-        else:
-            workhours_per_day = int(round(gpt_workhours_per_day))
-        gpt_eff_mandays = gpt_result["eff_mandays"]
-        if gpt_eff_mandays is None:
-            logger.warning(f"⚠️ gpt_result로부터 eff_mandays 정보를 추출할 수 없습니다. 기존에 책정된 개발팀의 실제 작업 가능 시간: {eff_mandays}시간을 사용합니다.")
-        else:
-            eff_mandays = int(round(gpt_eff_mandays))
-        number_of_sprints = gpt_result["number_of_sprints"]
-    except Exception as e:
-        logger.error("gpt_result로부터 Sprint 관련 정보를 추출할 수 없음", exc_info=True)
-        raise e
+    gpt_sprint_days = gpt_result["sprint_days"]
+    gpt_workhours_per_day = gpt_result["workhours_per_day"]
+    gpt_eff_mandays = gpt_result["eff_mandays"]
+    number_of_sprints = gpt_result["number_of_sprints"]
+    
+    if gpt_sprint_days is None:
+        logger.warning(f"⚠️ gpt_result로부터 sprint_days 정보를 추출할 수 없습니다. 기존에 책정된 스프린트 주기: {sprint_days}일을 사용합니다.")
+    if gpt_workhours_per_day is None:
+        logger.warning(f"⚠️ gpt_result로부터 workhours_per_day 정보를 추출할 수 없습니다. 기존에 책정된 1일 작업 가능 시간: {workhours_per_day}시간을 사용합니다.")
+    if gpt_eff_mandays is None:
+        logger.warning(f"⚠️ gpt_result로부터 eff_mandays 정보를 추출할 수 없습니다. 기존에 책정된 개발팀의 실제 작업 가능 시간: {eff_mandays}시간을 사용합니다.")
+    if number_of_sprints is None:
+        logger.warning(f"⚠️ gpt_result로부터 number_of_sprints 정보를 추출할 수 없습니다.")
+    
+    sprint_days = gpt_sprint_days if gpt_sprint_days is not None else sprint_days
+    workhours_per_day = gpt_workhours_per_day if gpt_workhours_per_day is not None else workhours_per_day
+    eff_mandays = gpt_eff_mandays if gpt_eff_mandays is not None else eff_mandays
+    number_of_sprints = number_of_sprints if number_of_sprints is not None else 1
+    
     logger.info(f"⚙️ sprint 한 주기: {sprint_days}일")
     logger.info(f"⚙️ 생성된 총 스프린트의 개수: {number_of_sprints}개")
     logger.info(f"⚙️ 평가된 개발팀의 실제 작업 가능 시간: {eff_mandays}시간")
