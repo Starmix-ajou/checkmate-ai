@@ -369,7 +369,7 @@ async def convert_action_items_to_tasks(actionItems: List[str], project_id: str)
 
 ### ============================== 테스트 코드 ============================== ###
 async def test_meeintg_analysis():
-    with open('mvp/meeting_sample.md', 'r', encoding='utf-8') as f:
+    with open('meeting_sample.md', 'r', encoding='utf-8') as f:
         content = f.read()
     
     # 테스트용 project_id 설정
