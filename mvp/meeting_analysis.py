@@ -264,16 +264,22 @@ async def convert_action_items_to_tasks(action_items: List[str], project_id: str
     """
     당신은 주어진 액션 아이템의 세부 내용을 정리해서 task로 변환하는 AI 비서입니다. 당신의 주요 언어는 한국어입니다.
     당신의 업무는 작업 내용, 작업 담당자, 작업 마감기한 정보가 담겨 있는 {action_items}로부터 title, description, assignee, endDate, epicId의 정보를 완성하는 것입니다.
-    다음의 과정을 따라서 task의 내용을 구성하고, 반드시 {action_items}에 존재하는 모든 task를 처리하도록 하세요.
-    1. 
-
+    반드시 다음의 과정을 따라서 {action_items}에 존재하는 item을 하나씩 처리하고, 모든 item이 처리되도록 하세요.
+    1. {action_items}에서 key값으로 description, assignee, endDate가 존재하는 다음 item을 선택해서 assignee와 endDate가 null인지 확인하세요.
+    2. assingee가 null인 경우 null을 값으로 그대로 반환하고, null이 아닌 경우 assignee가 {project_members}에 속한 구성원인지 확인하세요. 담당자가 project member가 아닌 경우 assignee 값으로 null을 반환합니다.
+    3. endDate는 endDate가 null인 경우 null을 값으로 그대로 반환하고, null이 아닌 경우 endDate가 오늘 날짜 이후인지 확인하세요. 만약 오늘 날짜 이후가 아닌 경우 endDate 값으로 null을 반환합니다.
+    4. description을 10글자 이내로 요약하여 title을 구성하세요.
+    5. {epics}에는 프로젝트에 속한 모든 epic들의 title, description, id 정보가 다음과 같은 형식으로 정리되어 있습니다: "- 제목: (title) - 내용: (description) - id: (ObjectId)"
+    description과 title을 바탕으로 현재 item의 내용과 가장 유사한 epic을 {epics} 목록 안에서 선택하세요.
+    6. 5번에서 선택한 epic의 id를 epicId로 반환하세요. 이때 직접 epicId를 생성하는 게 아니라 반드시 {epics}에 저장되어 있는 id 값을 그대로 반환해야 합니다. 한 번 더 강조합니다. 절대 epicId를 임의로 생성하지 말고 있는 정보를 그대로 입력하세요.
+    
     결과를 다음과 같은 형식으로 반환해 주세요:
     {{
         "actionItems": [
             {{
                 "title": "string",
                 "description": "string",
-                "assignee": "string",
+                "assignee": "string" | null,
                 "endDate": "string" | null,
                 "epicId": "string"
             }},
@@ -283,7 +289,7 @@ async def convert_action_items_to_tasks(action_items: List[str], project_id: str
     """)
     epic_collection = await get_epic_collection()
     epics = await epic_collection.find({"projectId": project_id}).to_list(length=None)
-    epics_content = "\n".join([f"- 제목: {epic['title']} 내용: {epic['description']} id: ({epic['_id']})" for epic in epics])  # epic들의 title, description, id 정보를 문자열로 정리
+    epics_content = "\n".join([f"- 제목: {epic['title']} - 내용: {epic['description']} - id: ({epic['_id']})" for epic in epics])  # epic들의 title, description, id 정보를 문자열로 정리
     logger.info(f"정리된 epics_content: {epics_content}")
     
     project_members = await get_project_members(project_id)
