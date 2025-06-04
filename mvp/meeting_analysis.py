@@ -13,9 +13,7 @@ from mongodb_setting import (get_epic_collection, get_project_collection,
                              get_user_collection)
 from openai import AsyncOpenAI
 from project_member_utils import get_project_members
-from redis_setting import load_from_redis, save_to_redis
-from transformers import (AutoModelForTokenClassification, AutoTokenizer,
-                          TokenClassificationPipeline)
+from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 logger = logging.getLogger(__name__)
 
