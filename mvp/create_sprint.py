@@ -572,11 +572,11 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
     1. 현재 설정된 스프린트의 주기는 {sprint_days}일입니다. 날짜 {today}부터 {project_end_date}까지 프로젝트가 진행되므로 {sprint_days} 단위로 총 몇 개의 sprint가 구성될 수 있고, 각 sprint의 시작일과 종료일은 무엇인지 판단하세요.
     2. 각 스프린트에는 {epics}에 정의된 epic이 최소 하나 이상 포함되어야 합니다. 각 epic마다 "epicId" 필드가 존재하고, 각 epic에는 "tasks" 필드가 존재하므로 스프린트에 epic을 배정할 때 해당 epic의 모든 정보를 누락없이 포함하세요.
     3. {epics}는 priority가 높은 순서대로 정렬된 데이터이므로, 각 스프린트에 되도록 제공된 순서대로 epic을 추가하세요.
-    4. epic에 포함된 task들의 priority를 점검하세요. 같은 epic에 포함된 task들의 priority는 서로 값이 30 이상씩 차이가 나야 합니다. 
+    4. epic에 포함된 task들의 priority를 점검하세요. 같은 epic에 포함된 task들의 priority는 서로 값이 30 이상씩 차이가 나야 합니다.
     만약 그렇지 않다면, task의 priority를 task가 존재하는 순서대로 300부터 50씩 감소하도록 조정하세요. 반드시 같은 epic에 속한 task들이 서로 같은 priority 값을 가지지 않도록 한 번 더 확인하세요.
     5. 각 epic의 "tasks" 필드에서 "expected_workhours" 필드를 찾아 그 값을 모두 합산하여 sprint별 총 작업량을 계산하세요.
-    6. {eff_mandays}*{sprint_days}의 값을 sprint_eff_mandays로 정의하세요. 계산된 총 작업량이 sprint_eff_mandays를 초과하는지 검사하세요. 만약 초과한다면 모든 task의 expected_workhours를 0.75배로 일괄되게 축소하세요.
-    7. 0.75배로 조정된 "expected_workhours"의 합산이 sprint_eff_mandays를 초과하는지 검토하세요. 초과할 경우, 모든 task의 expected_workhours를 0.5배로 한 번 더 바꾸세요. 초과하지 않는 경우에는 바꿀 필요 없이 다음 단계로 넘어가세요.
+    6. 계산된 총 작업량이 {eff_mandays}를 초과하는지 검사하세요. 만약 초과한다면 모든 task의 expected_workhours를 0.75배로 일괄되게 축소하세요.
+    7. 0.75배로 조정된 "expected_workhours"의 합산이 {eff_mandays}를 초과하는지 검토하세요. 초과할 경우, 모든 task의 expected_workhours를 0.5배로 한 번 더 바꾸세요. 초과하지 않는 경우에는 바꿀 필요 없이 다음 단계로 넘어가세요.
     8. sprint_days, eff_mandays, workhours_per_day를 4~6번의 계산 과정에 사용한 값 그대로 반환하세요.
     9. {epics}안에 정의된 epicId는 반드시 그대로 반환하세요. 다시 한 번 말합니다, {epics}안에 정의된 epicId는 절대로 바꾸지 말고 필요한 곳에 그대로 반환하세요.
     10. 스프린트의 description은 해당 스프린트에 포함된 epic들의 성격을 정의할 수 있는 하나의 문장으로 작성하고, 스프린트의 title은 description을 요약하여 제목으로 정의하세요.
@@ -585,7 +585,7 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
     반드시 tasks의 모든 field가 값을 가지는지 확인하세요. 또한 priority 값이 중복되는 task가 존재하지 않도록 하세요.
     {{
         "sprint_days": int,
-        "sprint_eff_mandays": int,
+        "eff_mandays": int,
         "workhours_per_day": int,
         "number_of_sprints": int
         "sprints": [
@@ -648,30 +648,30 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
     # GPT가 정의한 Sprint 정보 검토
     gpt_sprint_days = gpt_result["sprint_days"]
     gpt_workhours_per_day = gpt_result["workhours_per_day"]
-    gpt_sprint_eff_mandays = gpt_result["sprint_eff_mandays"]
+    gpt_eff_mandays = gpt_result["eff_mandays"]
     number_of_sprints = gpt_result["number_of_sprints"]
     
     if gpt_sprint_days is None:
         logger.warning(f"⚠️ gpt_result로부터 sprint_days 정보를 추출할 수 없습니다. 기존에 책정된 스프린트 주기: {sprint_days}일을 사용합니다.")
     if gpt_workhours_per_day is None:
         logger.warning(f"⚠️ gpt_result로부터 workhours_per_day 정보를 추출할 수 없습니다. 기존에 책정된 1일 작업 가능 시간: {workhours_per_day}시간을 사용합니다.")
-    if gpt_sprint_eff_mandays is None:
-        logger.warning(f"⚠️ gpt_result로부터 sprint_eff_mandays 정보를 추출할 수 없습니다. 기존에 책정된 개발팀의 실제 작업 가능 시간: {eff_mandays}시간을 사용합니다.")
+    if gpt_eff_mandays is None:
+        logger.warning(f"⚠️ gpt_result로부터 eff_mandays 정보를 추출할 수 없습니다. 기존에 책정된 개발팀의 실제 작업 가능 시간: {eff_mandays}시간을 사용합니다.")
     if number_of_sprints is None:
         logger.warning(f"⚠️ gpt_result로부터 number_of_sprints 정보를 추출할 수 없습니다.")
     
     sprint_days = gpt_sprint_days if gpt_sprint_days is not None else sprint_days
     workhours_per_day = gpt_workhours_per_day if gpt_workhours_per_day is not None else workhours_per_day
-    sprint_eff_mandays = gpt_sprint_eff_mandays if gpt_sprint_eff_mandays is not None else eff_mandays
+    eff_mandays = gpt_eff_mandays if gpt_eff_mandays is not None else eff_mandays
     number_of_sprints = number_of_sprints if number_of_sprints is not None else 1
     
     logger.info(f"⚙️ sprint 한 주기: {sprint_days}일")
     logger.info(f"⚙️ 생성된 총 스프린트의 개수: {number_of_sprints}개")
-    logger.info(f"⚙️ 평가된 개발팀의 스프린트 기간의 실제 작업 가능 시간: {sprint_eff_mandays}시간")
+    logger.info(f"⚙️ 평가된 개발팀의 실제 작업 가능 시간: {eff_mandays}시간")
     logger.info(f"⚙️ 평가된 개발팀의 1일 작업 가능 시간: {workhours_per_day}시간")
     
     
-    # sprint_eff_mandays 내부에 sprint별로 포함된 task들의 '재조정된 기능별 예상 작업시간'의 총합이 들어오는지 확인
+    # eff_mandays 내부에 sprint별로 포함된 task들의 '재조정된 기능별 예상 작업시간'의 총합이 들어오는지 확인
     sprints = gpt_result["sprints"]
     for sprint in sprints:
         assert sprint is not None, "sprint를 감지하지 못하였습니다."
@@ -686,8 +686,8 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
                 assert task is not None, "task을 감지하지 못하였습니다."
                 sum_of_workdays_per_sprint += task["expected_workhours"]
         logger.info(f"⚙️ 스프린트 {sprint['title']}에 포함된 태스크들의 예상 작업 일수의 합: {sum_of_workdays_per_sprint}시간")
-        #logger.info(f"⚙️ effective mandays: {sprint_eff_mandays}시간")
-        if sprint_eff_mandays < sum_of_workdays_per_sprint:
+        #logger.info(f"⚙️ effective mandays: {eff_mandays}시간")
+        if eff_mandays < sum_of_workdays_per_sprint:
             logger.warning(f"⚠️ 스프린트 {sprint['title']}에 포함된 태스크들의 예상 작업 일수의 합이 effective mandays를 초과합니다.")
     logger.info(f"✅ 생성된 모든 스프린트에 포함된 태스크들의 예상 작업 일수의 합이 effective mandays를 초과하지 않습니다.")
     
