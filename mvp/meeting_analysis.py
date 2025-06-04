@@ -351,8 +351,8 @@ async def convert_action_items_to_tasks(action_items: List[str], project_id: str
     
     assert name_to_id is not None, "name_to_id 매핑 정보가 구성되지 않았습니다."    # mapping 여부 검증
     
-    try:
-        for item in response:
+    for item in response:
+        try:
             # 담당자를 이름:id mapping
             if item["assigneeId"] is None:
                 logger.info(f"📌 {item['description']}의 담당자가 null입니다.")
@@ -363,8 +363,11 @@ async def convert_action_items_to_tasks(action_items: List[str], project_id: str
             else:
                 logger.info(f"⚠️ {item['title']}의 담당자가 {item['assigneeId']}로 존재하지만 name_to_id에 매핑된 정보가 없습니다.")
                 item["assigneeId"] = None
-            
-            # epic이 올바르게 연결되었는지 확인
+        except Exception as e:
+            logger.error(f"name_to_id 매핑 처리 중 오류 발생: {str(e)}", exc_info=True)
+
+        # epic이 올바르게 연결되었는지 확인
+        try:
             if item["epicId"] is not None:
                 logger.info(f"✅ {item['title']}에 매핑된 epicId가 존재합니다. epicId: {item['epicId']}")
                 try:
@@ -375,11 +378,18 @@ async def convert_action_items_to_tasks(action_items: List[str], project_id: str
                     item["epicId"] = None
             else:
                 logger.info(f"🔍 {item['title']}에 매핑된 epic이 없습니다.")
-    except Exception as e:
-        logger.error(f"name_to_id 매핑 처리 중 오류 발생: {str(e)}", exc_info=True)
-        raise e
-    logger.info(f"🔍 name_to_id 매핑 처리가 완료된 action_items가 반환됩니다: {response}")
-    
+        except Exception as e:
+            logger.error(f"epicId 매핑 처리 중 오류 발생: {str(e)}", exc_info=True)
+            
+        # endDate가 null을 반환하는 경우, 'null'이 아닌 null을 제대로 반환하는지 확인
+        try:
+            if item["endDate"] == 'null':
+                logger.warning(f"⚠️ {item['title']}의 endDate가 string 'null'로 되어 있습니다.")
+                item["endDate"] = None
+        except Exception as e:
+            logger.error(f"endDate 매핑 처리 중 오류 발생: {str(e)}", exc_info=True)
+
+    logger.info(f"🔍 다음이 API의 response로 반환됩니다: {response}")
     return response
 
 ### ============================== 메인 routing 함수 ============================== ###
