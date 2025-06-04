@@ -284,7 +284,7 @@ async def convert_action_items_to_tasks(action_items: List[str], project_id: str
             {{
                 "title": "string",
                 "description": "string",
-                "assignee": "string" | null,
+                "assigneeId": "string" | null,
                 "endDate": "string" | null,
                 "epicId": "string"
             }},
@@ -354,15 +354,15 @@ async def convert_action_items_to_tasks(action_items: List[str], project_id: str
     try:
         for item in response:
             # 담당자를 이름:id mapping
-            if item["assignee"] is None:
+            if item["assigneeId"] is None:
                 logger.info(f"📌 {item['description']}의 담당자가 null입니다.")
                 #continue
-            elif item["assignee"] in name_to_id:
-                logger.info(f"✅ {item['title']}의 담당자인 {item['assignee']}가 매핑된 name_to_id에 존재합니다.")
-                item["assignee"] = name_to_id[item["assignee"]]
+            elif item["assigneeId"] in name_to_id:
+                logger.info(f"✅ {item['title']}의 담당자인 {item['assigneeId']}가 매핑된 name_to_id에 존재합니다.")
+                item["assigneeId"] = name_to_id[item["assigneeId"]]
             else:
-                logger.info(f"⚠️ {item['title']}의 담당자가 {item['assignee']}로 존재하지만 name_to_id에 매핑된 정보가 없습니다.")
-                item["assignee"] = None
+                logger.info(f"⚠️ {item['title']}의 담당자가 {item['assigneeId']}로 존재하지만 name_to_id에 매핑된 정보가 없습니다.")
+                item["assigneeId"] = None
             
             # epic이 올바르게 연결되었는지 확인
             if item["epicId"] is not None:
