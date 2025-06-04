@@ -73,23 +73,39 @@ async def calculate_eff_mandays(efficiency_factor: float, number_of_developers: 
     logger.info(f"⚙️  Sprint별 효율적인 작업 배정 시간: {eff_mandays}시간")
     return eff_mandays
 
-async def calculate_percentiles(priority_dict: Dict[str, int]) -> Dict[str, int]:
-    # 우선순위에 따라 정렬
-    sorted_priority_values = sorted(priority_dict.values())
+async def calculate_percentiles(tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    '''
+    "tasks": [
+        {{
+            "title": "string",
+            "description": "string",
+            "assignee": "string",
+            "startDate": str(YYYY-MM-DD),
+            "endDate": str(YYYY-MM-DD),
+            "expected_workhours": int,
+            "priority": int
+        }},
+        ...
+    ]
+    '''
     
-    # 우선순위 30%, 70%, 100%에 해당하는 priority 값 추출
-    p30 = np.percentile(sorted_priority_values, 30)
-    p70 = np.percentile(sorted_priority_values, 70)
+    # task별 priority 값을 모아서 percentile 30, 70 추출
+    priority_values = [task["priority"] for task in tasks if "priority" in task]
+    p30 = np.percentile(priority_values, 30)
+    p70 = np.percentile(priority_values, 70)
     
-    for task_title in priority_dict.keys():
-        if priority_dict[task_title] <= p30:
-            priority_dict[task_title] = 50
-        elif priority_dict[task_title] <= p70:
-            priority_dict[task_title] = 150
+    # 각 task의 priority 값을 분위수에 따라 재조정
+    for task in tasks:
+        original_priority = task["priority"]
+        if original_priority <= p30:
+            task["priority"] = 50       # Low
+        elif original_priority <= p70:
+            task["priority"] = 150      # Medium
         else:
-            priority_dict[task_title] = 250
-    logger.info(f"🔍 H:30, M:40, L:30 비율로 우선순위 재조정한 결과: {priority_dict}")
-    return priority_dict
+            task["priority"] = 250      # High
+    logger.info(f"🔍 H:30, M:40, L:30 비율로 우선순위 재조정한 결과: {tasks}")
+    
+    return tasks
 
 
 ########## =================== Create Task ===================== ##########
@@ -556,15 +572,17 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
     1. 현재 설정된 스프린트의 주기는 {sprint_days}일입니다. 날짜 {today}부터 {project_end_date}까지 프로젝트가 진행되므로 {sprint_days} 단위로 총 몇 개의 sprint가 구성될 수 있고, 각 sprint의 시작일과 종료일은 무엇인지 판단하세요.
     2. 각 스프린트에는 {epics}에 정의된 epic이 최소 하나 이상 포함되어야 합니다. 각 epic마다 "epicId" 필드가 존재하고, 각 epic에는 "tasks" 필드가 존재하므로 스프린트에 epic을 배정할 때 해당 epic의 모든 정보를 누락없이 포함하세요.
     3. {epics}는 priority가 높은 순서대로 정렬된 데이터이므로, 각 스프린트에 되도록 제공된 순서대로 epic을 추가하세요.
-    4. 스프린트 별 epic 구성이 완료되고 나면, 각 epic의 "tasks" 필드에서 "expected_workhours" 필드를 찾아 그 값을 모두 합산하여 sprint별 총 작업량을 계산하세요.
-    5. 계산된 총 작업량이 {eff_mandays}를 초과하는지 검사하세요. 만약 초과한다면 모든 task의 expected_workhours를 0.75배로 일괄되게 축소하세요.
-    6. 0.75배로 조정된 "expected_workhours"의 합산이 {eff_mandays}를 초과하는지 검토하세요. 초과할 경우, 모든 task의 expected_workhours를 0.5배로 한 번 더 바꾸세요. 초과하지 않는 경우에는 바꿀 필요 없이 다음 단계로 넘어가세요.
-    7. sprint_days, eff_mandays, workhours_per_day를 4~6번의 계산 과정에 사용한 값 그대로 반환하세요.
-    8. {epics}안에 정의된 epicId는 반드시 그대로 반환하세요. 다시 한 번 말합니다, {epics}안에 정의된 epicId는 절대로 바꾸지 말고 필요한 곳에 그대로 반환하세요.
-    9. 스프린트의 description은 해당 스프린트에 포함된 epic들의 성격을 정의할 수 있는 하나의 문장으로 작성하고, 스프린트의 title은 description을 요약하여 제목으로 정의하세요.
+    4. epic에 포함된 task들의 priority를 점검하세요. 같은 epic에 포함된 task들의 priority는 서로 값이 30 이상씩 차이가 나야 합니다. 
+    만약 그렇지 않다면, task의 priority를 task가 존재하는 순서대로 300부터 50씩 감소하도록 조정하세요. 반드시 같은 epic에 속한 task들이 서로 같은 priority 값을 가지지 않도록 한 번 더 확인하세요.
+    5. 각 epic의 "tasks" 필드에서 "expected_workhours" 필드를 찾아 그 값을 모두 합산하여 sprint별 총 작업량을 계산하세요.
+    6. 계산된 총 작업량이 {eff_mandays}를 초과하는지 검사하세요. 만약 초과한다면 모든 task의 expected_workhours를 0.75배로 일괄되게 축소하세요.
+    7. 0.75배로 조정된 "expected_workhours"의 합산이 {eff_mandays}를 초과하는지 검토하세요. 초과할 경우, 모든 task의 expected_workhours를 0.5배로 한 번 더 바꾸세요. 초과하지 않는 경우에는 바꿀 필요 없이 다음 단계로 넘어가세요.
+    8. sprint_days, eff_mandays, workhours_per_day를 4~6번의 계산 과정에 사용한 값 그대로 반환하세요.
+    9. {epics}안에 정의된 epicId는 반드시 그대로 반환하세요. 다시 한 번 말합니다, {epics}안에 정의된 epicId는 절대로 바꾸지 말고 필요한 곳에 그대로 반환하세요.
+    10. 스프린트의 description은 해당 스프린트에 포함된 epic들의 성격을 정의할 수 있는 하나의 문장으로 작성하고, 스프린트의 title은 description을 요약하여 제목으로 정의하세요.
     
-    결과를 다음과 같은 형식으로 반환하세요. 이때, 만약 startDate와 endDate가 정의되지 않은 task가 존재한다면, sprint와 동일한 시작일, 종료일을 적용하세요. 
-    반드시 tasks의 모든 field가 값을 가지도록 구성하세요.
+    결과를 다음과 같은 형식으로 반환하세요. 이때, 만약 startDate와 endDate가 정의되지 않은 task가 존재한다면, sprint와 동일한 시작일, 종료일을 적용하세요.
+    반드시 tasks의 모든 field가 값을 가지는지 확인하세요. 또한 priority 값이 중복되는 task가 존재하지 않도록 하세요.
     {{
         "sprint_days": int,
         "eff_mandays": int,
@@ -705,17 +723,27 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
     
     first_sprint = sprints[0]
     logger.info(f"📌 첫 번째 순서의 sprint만 추출 : {first_sprint}")
+    
+    ### Task 중복 구성 문제 해결하기 !!! ###
     first_sprint_epics = first_sprint["epics"]
-    first_sprint_tasks = []
-    priority_dict = {}
-    # 태스크의 assignee 확인을 위한 디버깅 코드 추가
-    logger.info("🔍 태스크 assignee 확인 시작")
+    
+    priority_list = []
     for epic in first_sprint_epics:
-        #logger.info(f"📌 이번 sprint에 포함된 epic의 정보: {epic}")
+        priority_list.extend([task["priority"] for task in epic["tasks"]])
+        logger.info(f"🔍 {epic['epicId']} 소속 tasks들의 priority 값 누적 목록: {priority_list}")
+    priority_list = list(set(priority_list))    # set을 사용해서 중복되는 우선순위를 걷어내 보자.
+    p30 = np.percentile(priority_list, 30)
+    p70 = np.percentile(priority_list, 70)
+    logger.info(f"----🔍 priority 목록의 30% 값: {p30}, 70% 값: {p70}----")
+    
+    for epic in first_sprint_epics:
         for task in epic["tasks"]:
-            #logger.info(f"📌 이번 sprint에 포함된 task의 정보: {task['title']}, 담당자: {task['assignee']}")
-            priority_dict[task["title"]] = task["priority"]
-            # assignee가 name_to_id에 없는 경우 처리
+            if task["priority"] <= p30:
+                task["priority"] = 50
+            elif task["priority"] <= p70:
+                task["priority"] = 150
+            else:
+                task["priority"] = 250
             if task["assignee"] not in name_to_id:
                 logger.warning(f"⚠️ 현재 매핑된 사용자 목록: {list(name_to_id.keys())}")
                 raise Exception(f"⚠️ {task['title']}의 담당자인 {task['assignee']}가 매핑된 name_to_id에 존재하지 않습니다.")
@@ -726,14 +754,12 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
             except Exception as e:
                 logger.error(f"🚨 name을 id로 변환하는 데에 실패했습니다: {e}", exc_info=True)
                 raise e
-            first_sprint_tasks.append(task)
-    
-    # 우선순위 High, Medium, Low의 비율 재조정 (현재 3:4:3)
-    priority_dict = await calculate_percentiles(priority_dict)
 
+    logger.info(f"👉👉👉 ❗️ 첫 번째 sprint 반환하기 전에 반드시 task && priority가 중복되는지 확인하세요: {first_sprint}")
+    
     # API 응답 반환
     response = {
-        "sprint": 
+        "sprint":
         {
             "title": first_sprint["title"],
             "description": first_sprint["description"],
@@ -750,24 +776,16 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
                         "assigneeId": task["assignee"],
                         "startDate": task["startDate"],
                         "endDate": task["endDate"],
-                        "priority": priority_dict[task["title"]]
+                        "priority": task["priority"]
                     }
-                    for task in first_sprint_tasks
+                    for task in epic["tasks"]
                 ]
             }
-            for epic in first_sprint_epics
+            for epic in first_sprint["epics"]
         ]
     }
     logger.info(f"👉 API 응답 결과: {response}")
     return response
     
 if __name__ == "__main__":
-    priority_dict = {
-        "task1": 259,
-        "task2": 237,
-        "task3": 189,
-        "task4": 220,
-        "task5": 271
-    }
-    priority_dict = asyncio.run(calculate_percentiles(priority_dict))
-    print(f"🔍 우선순위 재조정 결과: {priority_dict}")
+    asyncio.run(create_sprint())
