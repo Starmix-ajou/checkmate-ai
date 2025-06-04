@@ -54,7 +54,6 @@ class EpicPOSTRequest(BaseModel):
     startDate: datetime
 
 class MeetingPOSTRequest(BaseModel):
-    meetingId: str
     title: str
     content: str
     projectId: str
@@ -206,7 +205,7 @@ async def post_meeting(request: MeetingPOSTRequest):
     try:
         logger.info(f"📨 POST /meeting 요청 수신: {request}")
         logger.info(f"📨 요청 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        result = await analyze_meeting_document(request.meetingId, request.title, request.content, request.projectId)
+        result = await analyze_meeting_document(request.title, request.content, request.projectId)
         logger.info(f"✅ 처리 결과: {result}")
         return result
     except Exception as e:

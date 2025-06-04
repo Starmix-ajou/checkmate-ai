@@ -366,8 +366,13 @@ async def convert_action_items_to_tasks(action_items: List[str], project_id: str
             
             # epic이 올바르게 연결되었는지 확인
             if item["epicId"] is not None:
-                selected_epic = await epic_collection.find_one({"_id": item["epicId"]})
-                logger.info(f"🔍 {item['title']}에 매핑된 epic: {selected_epic['title']}")
+                logger.info(f"✅ {item['title']}에 매핑된 epicId가 존재합니다. epicId: {item['epicId']}")
+                try:
+                    selected_epic = await epic_collection.find_one({"_id": item["epicId"]})
+                    logger.info(f"🔍 epicId를 사용해서 epic collection으로부터 조회된 epic 제목: {selected_epic['title']}")
+                except Exception as e:
+                    logger.warning(f"⚠️ 액션 아이템에 할당된 epicId가 존재하지만 실제 epic collection에서 조회되지 않습니다. 오류 내용: {str(e)}", exc_info=True)
+                    item["epicId"] = None
             else:
                 logger.info(f"🔍 {item['title']}에 매핑된 epic이 없습니다.")
     except Exception as e:
@@ -378,7 +383,7 @@ async def convert_action_items_to_tasks(action_items: List[str], project_id: str
     return response
 
 ### ============================== 메인 routing 함수 ============================== ###
-async def analyze_meeting_document(meeting_id: str, title: str, content: str, project_id: str):
+async def analyze_meeting_document(title: str, content: str, project_id: str):
     '''
     # md 파일에 대한 요약 생성
     - 결과를 md 파일로 반환해야 함
