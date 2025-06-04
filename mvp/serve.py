@@ -8,15 +8,14 @@ import httpx
 import redis.asyncio as aioredis
 from create_sprint import create_sprint
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from feature_definition import (create_feature_definition,
                                 update_feature_definition)
 from feature_specification import (create_feature_specification,
                                    update_feature_specification)
-from meeting_analysis import (analyze_meeting_document,
-                              convert_action_items_to_tasks)
+from meeting_analysis import analyze_meeting_document
 from mongodb_setting import test_mongodb_connection
 from pydantic import BaseModel
 from redis_setting import test_redis_connection
