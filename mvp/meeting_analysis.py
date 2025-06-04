@@ -306,7 +306,7 @@ async def convert_action_items_to_tasks(action_items: List[str], project_id: str
     )
     llm = ChatOpenAI(
         model_name="gpt-4o-mini",
-        temperature=0.6,
+        temperature=0.2,
     )
     response = await llm.ainvoke(messages)
     try:
