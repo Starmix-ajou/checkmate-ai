@@ -204,8 +204,6 @@ async def post_epic(request: EpicPOSTRequest):
 @app.post("/meeting", response_model=CreateMeetingResponse)
 async def post_meeting(request: MeetingPOSTRequest):
     try:
-        #content = await file.read()
-        #content = content.decode('utf-8')
         logger.info(f"📨 POST /meeting 요청 수신: {request}")
         logger.info(f"📨 요청 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         result = await analyze_meeting_document(request.meetingId, request.title, request.content, request.projectId)

@@ -387,6 +387,7 @@ async def analyze_meeting_document(meeting_id: str, title: str, content: str, pr
     
     '''   
     summary = await create_summary(title, content, project_id)
+    logger.info(f"✅ 생성된 회의 요약: {summary}")
     
     '''
     # 액션 아이템 생성
@@ -395,6 +396,7 @@ async def analyze_meeting_document(meeting_id: str, title: str, content: str, pr
     - 반환된 action_items를 convert_action_items_to_tasks 함수에 인수로 전달
     '''
     action_items = await create_action_items_gpt(content)
+    logger.info(f"✅ 생성된 액션 아이템: {action_items}")
     
     '''
     # action_items를 task로 변환
@@ -403,6 +405,7 @@ async def analyze_meeting_document(meeting_id: str, title: str, content: str, pr
     - 단, assignee, endDate가 null일 수 있는데 이 경우에는 일단 null로 모두 반환 -> 이후에 추가 처리 필요
     '''
     actionItems = await convert_action_items_to_tasks(action_items, project_id)
+    logger.info(f"✅ task로 변환된 액션 아이템: {actionItems}")
     
     response = {
         "summary": summary,
