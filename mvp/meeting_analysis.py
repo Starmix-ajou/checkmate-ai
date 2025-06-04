@@ -9,7 +9,8 @@ from gpt_utils import extract_json_from_gpt_response
 from huggingface_hub import login
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-from mongodb_setting import get_epic_collection
+from mongodb_setting import (get_epic_collection, get_project_collection,
+                             get_user_collection)
 from openai import AsyncOpenAI
 from project_member_utils import get_project_members
 from redis_setting import load_from_redis, save_to_redis
@@ -149,80 +150,31 @@ async def create_action_items_finetuned(content: str):
         },
     ]
     '''
-    print(f"최종 처리된 action_items: {action_items}")
+    logger.info(f"최종 처리된 action_items: {action_items}")
     
     return action_items
 
-### ============================== Current: Summary & Action Items Extraction ============================== ###
-
-async def create_action_items_gpt(content: str):
-    logger.info(f"🔍 회의 액션 아이템 생성 시작")
-    
-    action_items_prompt = ChatPromptTemplate.from_template("""
-    당신은 회의록으로부터 액션 아이템을 정리해주는 AI 비서입니다. 당신의 주요 언어는 한국어입니다.
-    회의록 {content}를 분석하여 다음 세 가지 요소를 포함한 액션 아이템을 정의해 주세요:
-    1. 액션 아이템 내용
-    2. 담당자
-    3. 마감 기한
-    
-    세 가지 요소 중 회의록에 정보가 없는 요소는 null을 반환해 주세요.
-    
-    결과를 다음과 같은 형식으로 반환해 주세요:
-    {{
-        "actionItems": [
-            {{
-                "task": "string",
-                "assignee": "string" | null,
-                "enddate": "string" | null
-            }},
-            ...
-        ]
-    }}
-    """)
-    messages = action_items_prompt.format(content=content)
-    llm = ChatOpenAI(
-        model_name="gpt-4o-mini",
-        temperature=0.0,
-    )
-    response = await llm.ainvoke(messages)
-    try:
-        content = response.content
-        try:
-            gpt_result = extract_json_from_gpt_response(content)
-        except Exception as e:
-            logger.error(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True)
-            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True) from e
-    except Exception as e:
-        logger.error(f"GPT API 처리 중 오류 발생: {e}", exc_info=True)
-        raise Exception(f"GPT API 처리 중 오류 발생: {str(e)}", exc_info=True) from e
-    
-    action_items = gpt_result["actionItems"]
-    print(f"생성된 액션 아이템: {action_items}")
-    
-    return action_items
-
+### ============================== API 정의 ============================== ###
+### ================ Summary & Action Items Extraction ================== ###
 async def create_summary(title: str, content: str, project_id: str):
     '''
     title: 사용자가 제목으로 회의록을 대표하는 내용을 입력한다고 가정 -> 요약의 첫 번째 뼈대로 사용
     content: Markdown 형태로 문서가 제공됨
     '''
     logger.info(f"🔍 회의 요약 생성 시작")
-    
-    print(f"회의 제목: {title}")
     meeting_summary_prompt = ChatPromptTemplate.from_template("""
     당신은 회의록에서 중요한 대화 내용을 정리해 주는 AI 비서입니다. 당신의 주요 언어는 한국어입니다. 정리한 내용은 반드시 Markdown 형식으로 반환해 주세요.
     당신의 업무는 회의 제목인 {title}을 바탕으로 회의록 {content}를 분석하여 중요한 대화 내용을 정리하는 것입니다.
-    {title}은 회의의 제목으로서 회의록에서 논의되는 내용을 대표하는 것으로 간주합니다. 따라서 회의록의 내용을 분석할 때 {title}을 적극적으로 참조하세요.
-    Heading이 있는 경우, 요약 과정에서도 Heading 레벨을 유지해 주세요. 예를 들어, 회의록에 "## 회의 요약"이라는 내용이 있는 경우, 요약 결과에도 "## 회의 요약"이 존재해야 합니다.
-    회의록에서 중요한 대화 내용을 정리해 주세요. 중요한 대화 내용은 다음과 같습니다:
+    {title}은 회의의 제목으로서 회의록에서 논의되는 내용을 대표하는 것으로 간주합니다. 회의록의 내용을 분석할 때 {title}을 적극적으로 참조하고, 요약본의 첫 번째 문장에 Heading 1 레벨로 {title}을 넣어주세요.
+    {content}에 있는 Heading은 요약 과정에서도 Heading 레벨을 유지하세요. 예를 들어, 회의록에 "## 회의 요약"이라는 내용이 있는 경우, 요약 결과에도 "## 회의 요약"이 존재해야 합니다.
+    회의록에서 중요한 대화 내용을 정리해 주세요. 중요한 대화 내용은 다음과 같으며, 각 목차를 Heading 레벨로 표시하세요:
     - 회의 안건
     - 안건에 대한 논의 결과
     - 다음 회의 안건
-    - 중요한 피드백 및 의견
+    - 중요한 피드백 및 의견 정리
     
-    현재 프로젝트에 참여 중인 멤버들의 정보는 다음과 같습니다:
-    {project_members}
-    멤버들 중에서 특정 이름을 가진 발화자가 있는 경우 발화자의 이름과 발화 내용을 하나의 문장으로 묶어서 정리해 주세요.
+    현재 프로젝트에 참여 중인 멤버들의 정보는 다음과 같습니다: {project_members}
+    {content}에서 멤버로 포함된 발화자가 감지되는 경우, 발화자의 이름과 발화 내용을 하나의 문장으로 묶어서 정리해 주세요.
     
     결과를 다음과 같은 형식으로 반환하세요:
     {{
@@ -256,95 +208,36 @@ async def create_summary(title: str, content: str, project_id: str):
         raise Exception(f"GPT API 처리 중 오류 발생: {str(e)}", exc_info=True) from e
     
     summary = gpt_result["summary"]
-    print(f"회의 요약 결과: {summary}")
+    logger.info(f"회의 요약 결과: {summary}")
     
     return summary
 
-
-async def analyze_meeting_document(meeting_id: str, title: str, content: str, project_id: str):
-    global action_items, summary
-    # 초기화 필수!
-    action_items = None
-    summary = None
-    
-    action_items = await create_action_items_gpt(content)
-    try:
-        await save_to_redis(f"action_items:{str(project_id)}", action_items)
-    except Exception as e:
-        logger.error(f"action_items 저장 중 오류 발생: {str(e)}", exc_info=True)
-        raise Exception(f"action_items 저장 중 오류 발생: {str(e)}", exc_info=True) from e
-    
-    summary = await create_summary(title, content, project_id)
-    
-    # action_items에서 task들만 추출
-    task_list = [item["task"] for item in action_items]
-    
-    response = {
-        "summary": summary,
-        "actionItems": task_list,
-    }
-    logger.info(f"구성된 response: {response}")
-    return response
-
-
-async def convert_action_items_to_tasks(actionItems: List[str], project_id: str):
-    try:
-        redis_action_items = await load_from_redis(f"action_items:{str(project_id)}")
-    except Exception as e:
-        logger.error(f"action_items 로드 중 오류 발생: {str(e)}", exc_info=True)
-        raise Exception(f"action_items 로드 중 오류 발생: {str(e)}", exc_info=True) from e
-    
-    assert redis_action_items is not None, "정의되어 있는 전역 변수 action_items가 없습니다."
-    assert actionItems is not None, "actionItems가 제공되지 않았습니다."
-    
-    action_items_to_tasks_prompt = ChatPromptTemplate.from_template(
-    """
-    당신은 액션 아이템을 태스크로 변환해 주는 AI 비서입니다. 당신의 주요 언어는 한국어입니다.
-    당신의 업무는 작업 내용, 작업 담당자, 작업 마감기한 정보가 담겨 있는 {previous_action_items}와 사용자가 선택한 작업 내용인 {actionItems}를 바탕으로
-    프로젝트에 추가될 task의 title, description, assignee, endDate, epicId 정보를 구성하는 것입니다.
-    다음의 과정을 따라서 task의 내용을 구성하고, 반드시 {actionItems}에 존재하는 모든 task를 처리하도록 하세요.
-    
-    1. 우선 {actionItems}에 있는 task 중에 {previous_action_items}에 존재하는 task가 있는지 string을 비교해서 확인하세요.
-    이릉이 완전히 동일하지 않더라도 비슷한 내용을 가지고 있다면 동일한 task로 간주해서 처리해 주세요. 이때 cosine similarity를 기준으로 0.9 이상만 동일한 task로 처리합니다.
-    이렇게 찾은 동일한 task를 detected_task, 그렇지 않은 task를 undetected_task로 명명하겠습니다.
-    2. detected_task와 undetected_task 모두 {actionItems}의 string을 title로 설정하세요. detected와 undetected의 이름이 다르더라도 {actionItems}가 기준입니다.
-    3. detected_task와 undetected_task의 title을 가지고 description을 생성하세요.
-    4. detected_task의 assignee가 null이 아니라면 {project_members}를 참고해서 이미 선언되어 있는 assignee 정보게 맞게 새롭게 project member 안에서 assignee를 부여해 주세요.
-    assignee는 원칙적으로 한 명이어야 하고, 만약 선언되어 있는 assignee가 한 명의 이름이 아닌 "프로젝트 멤버 아무나" 혹은 "누구나 상관없음"과 같이 불특정 다수이 경우, {project_members} 중에 랜덤으로 한 명을 선택하세요.
-    5. detected_task의 endDate가 null이 아니라면 그대로 task의 endDate로 설정하세요. 만약 null이라면 그대로 null을 반환하세요.
-    6. 1-5번의 과정이 완료되었다면, {epics_str}에서 작업 내용과 가장 관련성이 높아 보이는 에픽의 이름을 찾아서 해당 에픽의 epicId를 epicId 필드값으로 반환해 주세요. 
-    제공되는 {epics_str}은 '- 에픽 이름: 에픽 ID' 형식이며 epicId 필드값이 반드시 명시되도록 하세요.
+async def create_action_items_gpt(content: str):
+    logger.info(f"🔍 회의 액션 아이템 생성 시작")
+    action_items_prompt = ChatPromptTemplate.from_template("""
+    당신은 회의록으로부터 액션 아이템을 추출해서 정리하는 AI 비서입니다. 당신의 주요 언어는 한국어입니다.
+    회의록 {content}를 분석하여 다음 세 가지 요소를 포함한 액션 아이템을 추출해 주세요:
+    1. 액션 아이템 내용 (task)
+    2. 담당자 (assignee)
+    3. 마감 기한 (endDate)
+    2번과 3번은 회의록에 정보가 없을 경우 null로 지정하세요.
     
     결과를 다음과 같은 형식으로 반환해 주세요:
     {{
-        "tasks": [
+        "actionItems": [
             {{
-                "title": "string",
                 "description": "string",
-                "assignee": "string",
-                "endDate": "string" | null,
-                "epicId": "string"
+                "assignee": "string" | null,
+                "endDate": "string" | null
             }},
             ...
         ]
     }}
     """)
-    epic_collection = await get_epic_collection()
-    epics = await epic_collection.find({"projectId": project_id}).to_list(length=None)
-    epics_str = "\n".join([f"- {epic['title']}: {epic['_id']}" for epic in epics])
-    print(f"정리된 epics_str: {epics_str}")
-    
-    project_members = await get_project_members(project_id)
-    
-    messages = action_items_to_tasks_prompt.format(
-        previous_action_items=redis_action_items,
-        new_action_items=actionItems,
-        project_members=project_members,
-        epics=epics_str
-    )
+    messages = action_items_prompt.format(content=content)
     llm = ChatOpenAI(
         model_name="gpt-4o-mini",
-        temperature=0.3,
+        temperature=0.0,
     )
     response = await llm.ainvoke(messages)
     try:
@@ -358,9 +251,144 @@ async def convert_action_items_to_tasks(actionItems: List[str], project_id: str)
         logger.error(f"GPT API 처리 중 오류 발생: {e}", exc_info=True)
         raise Exception(f"GPT API 처리 중 오류 발생: {str(e)}", exc_info=True) from e
     
-    response = gpt_result["tasks"]
-    print(f"태스크 결과: {response}")
+    action_items = gpt_result["actionItems"]
+    logger.info(f"생성된 액션 아이템: {action_items}")
     
+    return action_items
+
+
+async def convert_action_items_to_tasks(action_items: List[str], project_id: str):
+    assert action_items is not None, "action_items가 제공되지 않았습니다."
+    
+    action_items_to_tasks_prompt = ChatPromptTemplate.from_template(
+    """
+    당신은 주어진 액션 아이템의 세부 내용을 정리해서 task로 변환하는 AI 비서입니다. 당신의 주요 언어는 한국어입니다.
+    당신의 업무는 작업 내용, 작업 담당자, 작업 마감기한 정보가 담겨 있는 {action_items}로부터 title, description, assignee, endDate, epicId의 정보를 완성하는 것입니다.
+    다음의 과정을 따라서 task의 내용을 구성하고, 반드시 {action_items}에 존재하는 모든 task를 처리하도록 하세요.
+    1. 
+
+    결과를 다음과 같은 형식으로 반환해 주세요:
+    {{
+        "actionItems": [
+            {{
+                "title": "string",
+                "description": "string",
+                "assignee": "string",
+                "endDate": "string" | null,
+                "epicId": "string"
+            }},
+            ...
+        ]
+    }}
+    """)
+    epic_collection = await get_epic_collection()
+    epics = await epic_collection.find({"projectId": project_id}).to_list(length=None)
+    epics_content = "\n".join([f"- 제목: {epic['title']} 내용: {epic['description']} id: ({epic['_id']})" for epic in epics])  # epic들의 title, description, id 정보를 문자열로 정리
+    logger.info(f"정리된 epics_content: {epics_content}")
+    
+    project_members = await get_project_members(project_id)
+    
+    messages = action_items_to_tasks_prompt.format(
+        action_items=action_items,
+        project_members=project_members,
+        epics=epics_content
+    )
+    llm = ChatOpenAI(
+        model_name="gpt-4o-mini",
+        temperature=0.2,
+    )
+    response = await llm.ainvoke(messages)
+    try:
+        content = response.content
+        try:
+            gpt_result = extract_json_from_gpt_response(content)
+        except Exception as e:
+            logger.error(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True)
+            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True) from e
+    except Exception as e:
+        logger.error(f"GPT API 처리 중 오류 발생: {e}", exc_info=True)
+        raise Exception(f"GPT API 처리 중 오류 발생: {str(e)}", exc_info=True) from e
+    
+    response = gpt_result["actionItems"]
+    logger.info(f"actionItems 구성 결과: {response}")
+    
+    # assignee 이름을 대응되는 id로 변경
+    name_to_id = {}
+    user_collection = await get_user_collection()
+    project_collection = await get_project_collection()
+    project_data = await project_collection.find_one({"_id": project_id})   # DBRef에서 직접 ID 매핑 생성
+    logger.info("🔍 프로젝트 멤버 name:id mapping 시작")
+    for member_ref in project_data["members"]:
+        try:
+            user_id = member_ref.id
+            user_info = await user_collection.find_one({"_id": user_id})
+            if user_info is None:
+                logger.warning(f"⚠️ 사용자 정보를 찾을 수 없습니다: {user_id}")
+                continue
+            
+            name = user_info.get("name")
+            if name is None:
+                logger.warning(f"⚠️ 사용자 이름이 없습니다: {user_id}")
+                continue
+            
+            # ObjectId를 문자열로 변환
+            name_to_id[name] = str(user_id)
+            logger.info(f"✅ 사용자 매핑 성공 - 이름: {name}, ID: {str(user_id)}")
+        except Exception as e:
+            logger.error(f"❌ 사용자 정보 처리 중 오류 발생: {str(e)}", exc_info=True)
+            continue
+    
+    assert name_to_id is not None, "name_to_id 매핑 정보가 구성되지 않았습니다."    # mapping 여부 검증
+    
+    try:
+        for item in response:
+            if item["assignee"] is None:
+                logger.info(f"📌 {item['description']}의 담당자가 null입니다.")
+                #continue
+            elif item["assignee"] in name_to_id:
+                logger.info(f"✅ {item['title']}의 담당자인 {item['assignee']}가 매핑된 name_to_id에 존재합니다.")
+                item["assignee"] = name_to_id[item["assignee"]]
+            else:
+                logger.error(f"⚠️ {item['title']}의 담당자가 {item['assignee']}로 존재하지만 name_to_id에 매핑된 정보가 없습니다.")
+    except Exception as e:
+        logger.error(f"name_to_id 매핑 처리 중 오류 발생: {str(e)}", exc_info=True)
+        raise e
+    logger.info(f"🔍 name_to_id 매핑 처리가 완료된 action_items가 반환됩니다: {response}")
+    
+    return response
+
+### ============================== 메인 routing 함수 ============================== ###
+async def analyze_meeting_document(meeting_id: str, title: str, content: str, project_id: str):
+    '''
+    # md 파일에 대한 요약 생성
+    - 결과를 md 파일로 반환해야 함
+    - 원본에 있는 Heading 레벨을 요약본에서도 유지해야 함
+    - 회의 제목을 바탕으로 요약본이 동일한 방향성을 띄는지 정성적으로 평가
+    
+    '''   
+    summary = await create_summary(title, content, project_id)
+    
+    '''
+    # 액션 아이템 생성
+    - 요약한 결과에 액션 아이템을 포함해서 분석할지 아니면 원본에서부터 시작할지 결정해야 함 (일단 후자로 진행)
+    - 액션 아이템의 내용으로 (task, assingee, endDate) 쌍의 집합을 반환받아야 함
+    - 반환된 action_items를 convert_action_items_to_tasks 함수에 인수로 전달
+    '''
+    action_items = await create_action_items_gpt(content)
+    
+    '''
+    # action_items를 task로 변환
+    - action items에는 task 기준에서 description, assignee, endDate 정보가 담겨 있음
+    - 이를 바탕으로 title, epicId를 부여하고 assingee 이름을 대응되는 id로 변경해야 함
+    - 단, assignee, endDate가 null일 수 있는데 이 경우에는 일단 null로 모두 반환 -> 이후에 추가 처리 필요
+    '''
+    actionItems = await convert_action_items_to_tasks(action_items, project_id)
+    
+    response = {
+        "summary": summary,
+        "actionItems": actionItems,
+    }
+    logger.info(f"구성된 response: {response}")
     return response
 
 
