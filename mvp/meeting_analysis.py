@@ -191,7 +191,7 @@ async def create_summary(title: str, content: str, project_id: str):
     
     llm = ChatOpenAI(
         model_name="gpt-4o-mini",
-        temperature=0.1,
+        temperature=0.8,
     )
     response = await llm.ainvoke(messages)
     
@@ -217,10 +217,11 @@ async def create_action_items_gpt(content: str):
     action_items_prompt = ChatPromptTemplate.from_template("""
     당신은 회의록으로부터 액션 아이템을 추출해서 정리하는 AI 비서입니다. 당신의 주요 언어는 한국어입니다.
     회의록 {content}를 분석하여 다음 세 가지 요소를 포함한 액션 아이템을 추출해 주세요:
-    1. 액션 아이템 내용 (task)
+    1. 액션 아이템 내용 (description)
     2. 담당자 (assignee)
     3. 마감 기한 (endDate)
     2번과 3번은 회의록에 정보가 없을 경우 null로 지정하세요.
+    액션 아이템의 내용은 "~하기"로 명사형 어미를 사용해서 작성해야 합니다. 이를 위해 description을 한 번 더 정리하는 과정을 거치세요.
     
     결과를 다음과 같은 형식으로 반환해 주세요:
     {{
@@ -237,7 +238,7 @@ async def create_action_items_gpt(content: str):
     messages = action_items_prompt.format(content=content)
     llm = ChatOpenAI(
         model_name="gpt-4o-mini",
-        temperature=0.0,
+        temperature=0.5,
     )
     response = await llm.ainvoke(messages)
     try:
@@ -266,11 +267,17 @@ async def convert_action_items_to_tasks(action_items: List[str], project_id: str
     당신의 업무는 작업 내용, 작업 담당자, 작업 마감기한 정보가 담겨 있는 {action_items}로부터 title, description, assignee, endDate, epicId의 정보를 완성하는 것입니다.
     반드시 다음의 과정을 따라서 {action_items}에 존재하는 item을 하나씩 처리하고, 모든 item이 처리되도록 하세요.
     1. {action_items}에서 key값으로 description, assignee, endDate가 존재하는 다음 item을 선택해서 assignee와 endDate가 null인지 확인하세요.
-    2. assingee가 null인 경우 null을 값으로 그대로 반환하고, null이 아닌 경우 assignee가 {project_members}에 속한 구성원인지 확인하세요. 담당자가 project member가 아닌 경우 assignee 값으로 null을 반환합니다.
+    2. assingee가 null인 경우 null을 값으로 그대로 반환하고, null이 아닌 경우 assignee가 {project_members}에 속한 구성원인지 확인하세요.
+    assignee가 멤버의 이름이 아닌 position의 이름일 수 있으므로 {project_members}로부터 멤버의 이름과 position 정보를 모두 확인하고, position이 assginee에 적혀 있는 경우 구성원의 이름으로 대체하여 반환하세요.
+    멤버의 이름과 position 정보가 모두 일치하지 않는 경우에만 assignee 값으로 null을 반환합니다.
     3. endDate는 endDate가 null인 경우 null을 값으로 그대로 반환하고, null이 아닌 경우 endDate가 오늘 날짜 이후인지 확인하세요. 만약 오늘 날짜 이후가 아닌 경우 endDate 값으로 null을 반환합니다.
+    endDate는 datetime 형식을 지닌 string으로 반환하세요.
     4. description을 10글자 이내로 요약하여 title을 구성하세요.
-    5. {epics}에는 프로젝트에 속한 모든 epic들의 title, description, id 정보가 다음과 같은 형식으로 정리되어 있습니다: "- 제목: (title) - 내용: (description) - id: (ObjectId)"
-    description과 title을 바탕으로 현재 item의 내용과 가장 유사한 epic을 {epics} 목록 안에서 선택하세요.
+    5. {epics}에는 프로젝트에 속한 모든 epic들의 title, description, id 정보가 다음과 같은 형식으로 정리되어 있습니다: "내용: (description) --- id: (ObjectId)"
+    epic별 description을 바탕으로 현재 item의 내용과 가장 유사한 epic을 {epics} 목록 안에서 선택하세요. 이 때 '유사하다'의 정의는 epic의 description과 item의 description 간의 cosine similarity가 0.95 이상임을 의미합니다.
+    만약 유사한 epic이 선택되지 않은 경우에는 cosine similarity의 threshold를 0.95에서 0.90으로 낮춰서 다시 유사한 epic을 선택하세요.
+    이 때도 유사한 epic이 선택되지 않으면 threshold를 한 번 더 0.90에서 0.80으로 조정합니다.
+    그럼에도 선택되지 않는다면 null을 반환하세요.
     6. 5번에서 선택한 epic의 id를 epicId로 반환하세요. 이때 직접 epicId를 생성하는 게 아니라 반드시 {epics}에 저장되어 있는 id 값을 그대로 반환해야 합니다. 한 번 더 강조합니다. 절대 epicId를 임의로 생성하지 말고 있는 정보를 그대로 입력하세요.
     
     결과를 다음과 같은 형식으로 반환해 주세요:
@@ -289,8 +296,8 @@ async def convert_action_items_to_tasks(action_items: List[str], project_id: str
     """)
     epic_collection = await get_epic_collection()
     epics = await epic_collection.find({"projectId": project_id}).to_list(length=None)
-    epics_content = "\n".join([f"- 제목: {epic['title']} - 내용: {epic['description']} - id: ({epic['_id']})" for epic in epics])  # epic들의 title, description, id 정보를 문자열로 정리
-    logger.info(f"정리된 epics_content: {epics_content}")
+    epics_content = "\n".join([f"epic_description: {epic['description']} --- epic_id: ({epic['_id']})" for epic in epics])  # epic들의 title, description, id 정보를 문자열로 정리
+    #logger.info(f"정리된 epics_content: {epics_content}")
     
     project_members = await get_project_members(project_id)
     
@@ -301,7 +308,7 @@ async def convert_action_items_to_tasks(action_items: List[str], project_id: str
     )
     llm = ChatOpenAI(
         model_name="gpt-4o-mini",
-        temperature=0.2,
+        temperature=0.6,
     )
     response = await llm.ainvoke(messages)
     try:
@@ -348,6 +355,7 @@ async def convert_action_items_to_tasks(action_items: List[str], project_id: str
     
     try:
         for item in response:
+            # 담당자를 이름:id mapping
             if item["assignee"] is None:
                 logger.info(f"📌 {item['description']}의 담당자가 null입니다.")
                 #continue
@@ -355,7 +363,15 @@ async def convert_action_items_to_tasks(action_items: List[str], project_id: str
                 logger.info(f"✅ {item['title']}의 담당자인 {item['assignee']}가 매핑된 name_to_id에 존재합니다.")
                 item["assignee"] = name_to_id[item["assignee"]]
             else:
-                logger.error(f"⚠️ {item['title']}의 담당자가 {item['assignee']}로 존재하지만 name_to_id에 매핑된 정보가 없습니다.")
+                logger.info(f"⚠️ {item['title']}의 담당자가 {item['assignee']}로 존재하지만 name_to_id에 매핑된 정보가 없습니다.")
+                item["assignee"] = None
+            
+            # epic이 올바르게 연결되었는지 확인
+            if item["epicId"] is not None:
+                selected_epic = await epic_collection.find_one({"_id": item["epicId"]})
+                logger.info(f"🔍 {item['title']}에 매핑된 epic: {selected_epic['title']}")
+            else:
+                logger.info(f"🔍 {item['title']}에 매핑된 epic이 없습니다.")
     except Exception as e:
         logger.error(f"name_to_id 매핑 처리 중 오류 발생: {str(e)}", exc_info=True)
         raise e
