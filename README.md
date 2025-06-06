@@ -1,9 +1,100 @@
-# checkmate-AI
-- 2025-1학기 캡스톤 디자인 과목에서 개발하는 CheckMate 서비스가 지원하는 AI 기능들과 관련된 데이터, 코드를 정리함.
+# checkmate-ai
+![체크메이트썸네일](https://i.imgur.com/rpwI0gG.png)
 
-## AI architecture
-- ver 1.0
-![AI Architecture Design](./figure/AI%20아키텍쳐.png)
+- 🌟 Starmix Organization GitHub : [https://github.com/Starmix-ajou](https://github.com/Starmix-ajou)
+- ♟ checkmate URL : [https://checkmate.it.kr](https://checkmate.it.kr)
+- 🖥 Project Manager 전용 뷰 : [https://manager.checkmate.it.kr](https://manager.checkmate.it.kr)
+
+## 프로젝트 소개
+
+**checkmate는 소규모 주니어 개발팀을 위한 프로젝트 관리 및 협업툴입니다.**
+
+AI를 활용한 프로젝트 생성과 Sprint 구성, 회의록 자동 요약 기능을 제공하여 팀의 초기 기획부터 실행까지의 과정을 효율적으로 지원합니다. 
+회의 내용을 실시간으로 정리할 수 있는 공동 편집 기능을 통해 주요 논의 사항을 요약하고, 이를 실행 가능한 액션 아이템(Task)으로 전환할 수 있습니다. 
+Task는 Epic 단위로 구조화할 수 있으며, Gantt Chart, Kanban Board, Calendar를 통해 관리할 수 있습니다. 
+또한 상세 Task 페이지의 댓글 기능을 통해 팀 내부 이해관계자 간의 원활한 소통이 가능하도록 하여, 개발 과정 전반에서 협업의 생산성을 높입니다.
+
+## 팀원 구성
+
+<div align="center">
+
+| 박승연 |
+| --- |
+| <img src="" width="200" height="200"/> |
+
+</div>
+<br>
+
+## 1. 개발 환경
+
+### AI
+![Python](https://img.shields.io/badge/react-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
+![Fast API](https://img.shields.io/badge/Next-black?style=for-the-badge&logo=next.js&logoColor=white)
+
+### 배포용 버전관리
+![Docker]()
+
+### 협업 툴
+![Notion](https://img.shields.io/badge/Notion-%23000000.svg?style=for-the-badge&logo=notion&logoColor=white)
+![Slack](https://img.shields.io/badge/Slack-4A154B?style=for-the-badge&logo=slack&logoColor=white)
+![Google Drive](https://img.shields.io/badge/Google%20Drive-4285F4?style=for-the-badge&logo=googledrive&logoColor=white)
+
+### 이슈 및 버전 관리
+![GitHub](https://img.shields.io/badge/github-%23121011.svg?style=for-the-badge&logo=github&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/github%20actions-%232671E5.svg?style=for-the-badge&logo=githubactions&logoColor=white)
+![Jira](https://img.shields.io/badge/jira-%230A0FFF.svg?style=for-the-badge&logo=jira&logoColor=white)
+
+### 테스트
+![Pytest]()
+
+## 2. 채택한 개발 기술과 브랜치 전략
+
+### Python
+
+### FastAPI
+
+### HuggingFace
+
+### 
+
+### 브랜치 전략
+
+- 브랜치 명: **Jira 태스크 ID 기반**
+  - ex) `CM-123`
+- **Rebase Merge** 방식으로 main 브랜치에 병합
+- **최소 1명 이상의 approve** 필요
+
+## 3. Challenge
+
+
+## 4. 프로젝트 구조
+``` bash
+.
+├── .github              # GitHub 설정 및 워크플로우
+├── mvp
+```
+
+## 5. 구조적 장점
+
+
+## 6. 테스트
+
+### Pytest를 사용한 테스트 코드 작성
+
+
+
+## 7. 개발 기간 및 작업 관리
+
+### 개발 기간
+
+- **2025-03-06 ~ (진행 중)**
+
+### 작업 관리
+
+- **협업 툴**: GitHub + Slack + Jira
+- **회의**: 주 2회 팀 전체 회의 진행 + Google Docs로 회의록 공유
+- **요청/QA 문서화**: Notion을 통해 요청 사항 정리 및 QA 문서로 재활용
+
 
 ## AI Modules
 1. feature_definition/ (기능 정의서 생성):
@@ -62,8 +153,6 @@
 
 ### Output Embedding
 - use BAAI/bge-m3 in common
-
-
 
 ## Fine-tuning
 ### 사용한 데이터셋
