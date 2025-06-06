@@ -28,8 +28,8 @@ Task는 Epic 단위로 구조화할 수 있으며, Gantt Chart, Kanban Board, Ca
 ## 1. 개발 환경
 
 ### AI
-![Python](https://img.shields.io/badge/react-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
-![Fast API](https://img.shields.io/badge/Next-black?style=for-the-badge&logo=next.js&logoColor=white)
+![Python]()
+![Fast API]()
 
 ### 배포용 버전관리
 ![Docker]()
