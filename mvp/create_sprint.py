@@ -529,11 +529,11 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
             epic_priority_sum += task["priority"]
         epic["prioritySum"] = epic_priority_sum
         logger.info(f"🔍 Epic {epic['title']}의 우선순위 총합: {epic_priority_sum}")
-        tasks.extend(captured_tasks)
+        captured_tasks.sort(key=lambda x: x["priority"], reverse=True)
         #logger.info(f"🔍⭐️ epic {epic_id}의 '정렬 전' task 개수: {len(tasks)}개")
-        tasks.sort(key=lambda x: x["priority"], reverse=True)
+        #tasks.sort(key=lambda x: x["priority"], reverse=True)
         #logger.info(f"🔍⭐️ epic {epic_id}의 '정렬 후' task 개수: {len(tasks)}개")
-        logger.info(f"⚙️ epic {epic['title']}의 우선순위에 따른 tasks 정렬 결과: {tasks}")
+        logger.info(f"⚙️ epic {epic['title']}의 우선순위에 따른 tasks 정렬 결과: {captured_tasks}")
     #logger.info(f"✅ 모든 epic에 대한 task들 정의 결과: {tasks}")
     
     # epic 우선순위에 내림차순 정렬
