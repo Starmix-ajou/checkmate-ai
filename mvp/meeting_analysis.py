@@ -220,7 +220,7 @@ async def create_action_items_gpt(content: str):
     2번과 3번은 회의록에 정보가 없을 경우 null로 지정하세요.
     액션 아이템의 내용은 "~하기"로 명사형 어미를 사용해서 작성해야 합니다. 이를 위해 description을 한 번 더 정리하는 과정을 거치세요.
     
-    결과를 다음과 같은 형식으로 반환해 주세요:
+    결과를 다음과 같은 JSON 형식으로 반환해 주세요. 다른 형식의 응답은 허용되지 않습니다. 다시 말하지만 반드시 JSON 형식으로만 응답해 주세요.
     {{
         "actionItems": [
             {{
@@ -234,7 +234,7 @@ async def create_action_items_gpt(content: str):
     """)
     messages = action_items_prompt.format(content=content)
     llm = ChatOpenAI(
-        model_name="gpt-4o-mini",
+        model_name="gpt-4o",
         temperature=0.5,
     )
     response = await llm.ainvoke(messages)
@@ -277,7 +277,7 @@ async def convert_action_items_to_tasks(action_items: List[str], project_id: str
     그럼에도 선택되지 않는다면 null을 반환하세요.
     6. 5번에서 선택한 epic의 id를 epicId로 반환하세요. 이때 직접 epicId를 생성하는 게 아니라 반드시 {epics}에 저장되어 있는 id 값을 그대로 반환해야 합니다. 한 번 더 강조합니다. 절대 epicId를 임의로 생성하지 말고 있는 정보를 그대로 입력하세요.
     
-    결과를 다음과 같은 형식으로 반환해 주세요:
+    결과를 다음과 같은 JSON 형식으로 반환해 주세요. 다른 형식의 응답은 허용되지 않습니다. 다시 말하지만 반드시 JSON 형식으로만 응답해 주세요.
     {{
         "actionItems": [
             {{
