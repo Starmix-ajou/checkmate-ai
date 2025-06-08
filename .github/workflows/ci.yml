@@ -41,6 +41,15 @@ jobs:
         run: |
           sed -i "s|image: $IMAGE_NAME:.*|image: $IMAGE_NAME:${{ github.sha }}|" manifests/apps/ai/deployment.yaml
 
+      - name: Install envsubst
+        run: sudo apt-get update && sudo apt-get install -y gettext
+
+      - name: Generate Argo CD Application with Webhook Secret
+        run: |
+          export WEBHOOK_SECRET="${{ secrets.WEBHOOK_SECRET }}"
+          envsubst < manifests/apps/backend/application.yaml > manifests/apps/backend/application.yaml.tmp
+          mv manifests/apps/backend/application.yaml.tmp manifests/apps/backend/application.yaml
+
       - name: Commit and Push Changes to Manifest Repo
         run: |
           cd manifests
