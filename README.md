@@ -28,12 +28,12 @@ Task는 Epic 단위로 구조화할 수 있으며, Gantt Chart, Kanban Board, Ca
 ## 1. 개발 환경
 
 ### AI
-![Python]("https://github.com/user-attachments/assets/1582e55f-96a1-42c9-a038-0677ca66c994")
-![FastAPI]("https://github.com/user-attachments/assets/6e308186-a0f5-4b13-981b-f5029a189505")
-![MongoDB]("https://github.com/user-attachments/assets/4821fb33-7da7-497b-9cfc-0ffc0ba436e2")
-![Docker]()
-![HuggingFace]("https://github.com/user-attachments/assets/5ec77529-b735-42b5-ac90-827e31b02de3")
-![OpenAI API]("https://github.com/user-attachments/assets/de344faf-a6b4-44eb-bf83-f5f03ff29d13")
+![Python](https://img.shields.io/badge/Python-3776AB.svg?style=for-the-badge&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688.svg?style=for-the-badge&logo=fastapi&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-47A248.svg?style=for-the-badge&logo=mongodb&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED.svg?style=for-the-badge&logo=docker&logoColor=white)
+![HuggingFace](https://img.shields.io/badge/HuggingFace-FFD21F.svg?style=for-the-badge&logo=huggingface&logoColor=white)
+![OpenAI API](https://img.shields.io/badge/OpenAI-412991.svg?style=for-the-badge&logo=openai&logoColor=white)
 
 ### 협업 툴
 ![Notion](https://img.shields.io/badge/Notion-%23000000.svg?style=for-the-badge&logo=notion&logoColor=white)
@@ -46,7 +46,8 @@ Task는 Epic 단위로 구조화할 수 있으며, Gantt Chart, Kanban Board, Ca
 ![Jira](https://img.shields.io/badge/jira-%230A0FFF.svg?style=for-the-badge&logo=jira&logoColor=white)
 
 ### 테스트
-![Pytest]()
+![Pytest](https://img.shields.io/badge/Pytest-0A9EDC.svg?style=for-the-badge&logo=pytest&logoColor=white)
+![Pydantic](https://img.shields.io/badge/Pydantic-158CBA.svg?style=for-the-badge&logo=pydantic&logoColor=white)
 
 ## 2. 채택한 개발 기술과 브랜치 전략
 
