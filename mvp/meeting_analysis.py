@@ -161,34 +161,33 @@ async def create_summary(title: str, content: str, project_id: str):
     '''
     logger.info(f"🔍 회의 요약 생성 시작")
     meeting_summary_prompt = ChatPromptTemplate.from_template("""
-    당신은 회의록에서 중요한 대화 내용을 정리해 주는 AI 비서입니다. 당신의 주요 언어는 한국어입니다. 정리한 내용은 반드시 Markdown 형식으로 반환해 주세요.
+    당신은 회의록에서 중요한 대화 내용을 정리해 주는 AI 비서입니다. 당신의 주요 언어는 한국어입니다. 정리한 내용은 Markdown 형식으로 반환해 주세요.
     당신의 업무는 회의 제목인 {title}을 바탕으로 회의록 {content}를 분석하여 중요한 대화 내용을 정리하는 것입니다.
-    {title}은 회의의 제목으로서 회의록에서 논의되는 내용을 대표하는 것으로 간주합니다. 회의록의 내용을 분석할 때 {title}을 적극적으로 참조하고, 요약본의 첫 번째 문장에 Heading 1 레벨로 {title}을 넣어주세요.
-    {content}에 있는 Heading은 요약 과정에서도 Heading 레벨을 유지하세요. 예를 들어, 회의록에 "## 회의 요약"이라는 내용이 있는 경우, 요약 결과에도 "## 회의 요약"이 존재해야 합니다.
-    회의록에서 중요한 대화 내용을 정리해 주세요. 중요한 대화 내용은 다음과 같으며, 각 목차를 Heading 레벨로 표시하세요:
-    - 회의 안건
-    - 안건에 대한 논의 결과
-    - 다음 회의 안건
-    - 중요한 피드백 및 의견 정리
+    {title}은 회의의 제목으로서 회의록에서 논의되는 내용을 대표하는 것으로 간주합니다. 
+    회의록의 내용을 분석할 때 {title}을 적극적으로 참조하고, 요약본의 맨 앞에 Heading 1 레벨로 {title}을 불렛 포인트 없이 넣으세요.
     
-    현재 프로젝트에 참여 중인 멤버들의 정보는 다음과 같습니다: {project_members}
-    {content}에서 멤버로 포함된 발화자가 감지되는 경우, 발화자의 이름과 발화 내용을 하나의 문장으로 묶어서 정리해 주세요.
+    {content}에 포함된 token의 수가 3000개 이상을 넘어가면 회의 안건, 안건 논의 결과, 다음 회의 안건, 중요 피드백 및 의견 정리 등의 목차를 구성하여 목차별로 체계적으로 정리하세요.
+    3000개 미만의 짧은 회의록의 경우에는 내용을 500자 이내로 최대한 압축해서 정리하세요. 이 때 목차를 구성하지 말고 내용을 최대한 압축해서 정리하세요.
     
-    결과를 다음과 같은 형식으로 반환하세요:
+    {content}에 포함된 Heading 레벨 표시 문자인 "#", "**" 등의 특수 문자는 요약을 구성하는 과정에만 참고하고 요약 결과에는 포함하지 마세요.
+    요약 결과는 내용을 보기 쉽게 불렛 포인트와 함께 문장으로 정리하세요.
+    
+    반드시 다음의 JSON 형식으로만 응답해 주세요. 다른 형식의 응답은 허용되지 않습니다. 다시 말하지만 반드시 JSON 형식으로만 응답해 주세요.
+    또한 반드시 summary를 Markdown 형식으로 작성하세요:
     {{
-        "summary": "Markdown 형식의 회의 요약 string",
+        "summary": "여기에 요약 내용을 Markdown 형식으로 작성"
     }}
     """)
     
     project_members = await get_project_members(project_id)
     
     messages = meeting_summary_prompt.format(
-        title=title, 
+        title=title,
         content=content,
         project_members=project_members)
     
     llm = ChatOpenAI(
-        model_name="gpt-4o-mini",
+        model_name="gpt-4o",
         temperature=0.8,
     )
     response = await llm.ainvoke(messages)
@@ -305,7 +304,7 @@ async def convert_action_items_to_tasks(action_items: List[str], project_id: str
         epics=epics_content
     )
     llm = ChatOpenAI(
-        model_name="gpt-4o-mini",
+        model_name="gpt-4o",
         temperature=0.2,
     )
     response = await llm.ainvoke(messages)
@@ -432,23 +431,36 @@ async def analyze_meeting_document(title: str, content: str, project_id: str):
 
 ### ============================== 테스트 코드 ============================== ###
 async def test_meeintg_analysis():
-    with open('meeting_sample.md', 'r', encoding='utf-8') as f:
-        content = f.read()
+    #with open('meeting_sample.md', 'r', encoding='utf-8') as f:
+    #    content = f.read()
     
     # 테스트용 project_id 설정
-    project_id = "815cf1fa-2c17-44e5-bd0c-4b93832f67ee"
+    project_id = "b5728b16-6610-4762-b178-bb71f56a6616"
     
     # 액션 아이템 생성 테스트
-    logger.info("=== 액션 아이템 생성 테스트 ===")
-    action_items = await create_action_items_finetuned(content)
-    print(f"생성된 액션 아이템: {action_items}")
+    print("=== 액션 아이템 생성 테스트 ===")
+    #action_items = await create_action_items_gpt(content)
+    #print(f"생성된 액션 아이템: {action_items}")
     
     # 회의 요약 생성 테스트
-    logger.info("\n=== 회의 요약 생성 테스트 ===")
-    title = "MVP 기능 범위 및 개발 일정 논의"
+    load_dotenv()
+    print("\n=== 회의 요약 생성 테스트 - 꼼꼼하게 작성된 버전 ===")
+    title = "꼼꼼한 회의록"
+    print("\n 원본: \n")
+    with open('meeting_sample_strict.md', 'r', encoding='utf-8') as f:
+        content = f.read()
+    print(content)
     summary = await create_summary(title, content, project_id)
-    print("\n생성된 회의 요약:")
-    print(summary)
+    print(f"생성된 회의 요약: {summary}")
+    
+    print("\n=== 회의 요약 생성 테스트 - 느슨한 회의록 ===")
+    title = "느슨한 회의록"
+    print("\n 원본: \n")
+    with open('meeting_sample_rough.md', 'r', encoding='utf-8') as f:
+        content = f.read()
+    print(content)
+    summary = await create_summary(title, content, project_id)
+    print(f"생성된 회의 요약: {summary}")
     
 if __name__ == "__main__":
     #print(model_for_ner.config.id2label)
