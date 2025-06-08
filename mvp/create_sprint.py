@@ -587,7 +587,7 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
             "epicId": epic["_id"],
             "tasks": []
         }
-        for task in tasks:
+        for task in captured_tasks:
             if task["epic"] == epic["_id"]:
                 epic_tasks["tasks"].append(task)
         tasks_by_epic.append(epic_tasks)
