@@ -13,7 +13,8 @@ from mongodb_setting import (get_epic_collection, get_project_collection,
                              get_user_collection)
 from openai import AsyncOpenAI
 from project_member_utils import get_project_members
-from transformers import AutoModelForTokenClassification, AutoTokenizer
+from transformers import (AutoModelForTokenClassification, AutoTokenizer,
+                          pipeline)
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ specify_model_name = "monologg/koelectra-base-v3-naver-ner"
 tokenizer = AutoTokenizer.from_pretrained(specify_model_name)
 model_for_ner = AutoModelForTokenClassification.from_pretrained(specify_model_name)
 
+### ==================== 회의 액션 아이템 생성 - 파인튜닝 모델 사용 ==================== ###
 async def create_action_items_finetuned(content: str):
     logger.info(f"🔍 회의 액션 아이템 생성 시작")
     
@@ -151,7 +153,7 @@ async def create_action_items_finetuned(content: str):
     logger.info(f"최종 처리된 action_items: {action_items}")
     
     return action_items
-
+    
 ### ============================== API 정의 ============================== ###
 ### ================ Summary & Action Items Extraction ================== ###
 async def create_summary(title: str, content: str, project_id: str):
@@ -431,37 +433,48 @@ async def analyze_meeting_document(title: str, content: str, project_id: str):
 
 ### ============================== 테스트 코드 ============================== ###
 async def test_meeintg_analysis():
-    #with open('meeting_sample.md', 'r', encoding='utf-8') as f:
-    #    content = f.read()
+    with open('meeting_sample.md', 'r', encoding='utf-8') as f:
+        content = f.read()
     
     # 테스트용 project_id 설정
     project_id = "b5728b16-6610-4762-b178-bb71f56a6616"
     
-    # 액션 아이템 생성 테스트
-    print("=== 액션 아이템 생성 테스트 ===")
-    #action_items = await create_action_items_gpt(content)
-    #print(f"생성된 액션 아이템: {action_items}")
+    title = "꼼꼼한 회의록"
+    summary = await create_summary_hf(title, content, project_id)
+    print(f"생성된 회의 요약: {summary}")
     
     # 회의 요약 생성 테스트
-    load_dotenv()
-    print("\n=== 회의 요약 생성 테스트 - 꼼꼼하게 작성된 버전 ===")
-    title = "꼼꼼한 회의록"
-    print("\n 원본: \n")
-    with open('meeting_sample_strict.md', 'r', encoding='utf-8') as f:
-        content = f.read()
-    print(content)
-    summary = await create_summary(title, content, project_id)
-    print(f"생성된 회의 요약: {summary}")
+    # load_dotenv()
+    # print("\n=== 회의 요약 생성 테스트 - 꼼꼼한 회의록 버전 ===")
+    # title = "꼼꼼한 회의록"
+    # print("\n 원본: \n")
+    # with open('meeting_sample_strict.md', 'r', encoding='utf-8') as f:
+    #     content = f.read()
+    # print(content)
+    # summary = await create_summary(title, content, project_id)
+    # print(f"생성된 회의 요약: {summary}")
     
-    print("\n=== 회의 요약 생성 테스트 - 느슨한 회의록 ===")
-    title = "느슨한 회의록"
-    print("\n 원본: \n")
-    with open('meeting_sample_rough.md', 'r', encoding='utf-8') as f:
-        content = f.read()
-    print(content)
-    summary = await create_summary(title, content, project_id)
-    print(f"생성된 회의 요약: {summary}")
+    # # 액션 아이템 생성 테스트
+    # print("=== 액션 아이템 생성 테스트 - 꼼꼼한 회의록 버전 ===")
+    # action_items = await create_action_items_gpt(content)
+    # print(f"생성된 액션 아이템: {action_items}")
     
+    
+    # print("\n=== 회의 요약 생성 테스트 - 느슨한 회의록 ===")
+    # title = "느슨한 회의록"
+    # print("\n 원본: \n")
+    # with open('meeting_sample_rough.md', 'r', encoding='utf-8') as f:
+    #     content = f.read()
+    # print(content)
+    # summary = await create_summary(title, content, project_id)
+    # print(f"생성된 회의 요약: {summary}")
+    
+    # # 액션 아이템 생성 테스트
+    # print("=== 액션 아이템 생성 테스트 - 느슨한 회의록 버전 ===")
+    # action_items = await create_action_items_gpt(content)
+    # print(f"생성된 액션 아이템: {action_items}")
+
+
 if __name__ == "__main__":
     #print(model_for_ner.config.id2label)
     import asyncio
