@@ -1,10 +1,8 @@
-
 # mvp 배포 시 제외되어야 하는 파일들 dismiss
 mvp/redis-data.json
 mvp/mock_*.json
 mvp/requirements.in
 mvp/asset/
-mvp/*.md
 
 # 가상 환경 dismiss
 venv/
@@ -23,9 +21,12 @@ src/
 test.txt
 
 # 모델 학습 및 평가에 사용된 데이터 파일 dismiss
-Korpora/
 AI_hub/
-bge_training.py
+*.bin
+
+# fine_tuning 디렉토리 설정
+fine_tuning/*
+!fine_tuning/training_w_Korpora.py
 
 # Created by https://www.toptal.com/developers/gitignore/api/macos,pycharm,visualstudiocode,python
 # Edit at https://www.toptal.com/developers/gitignore?templates=macos,pycharm,visualstudiocode,python
