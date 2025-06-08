@@ -20,7 +20,7 @@ Task는 Epic 단위로 구조화할 수 있으며, Gantt Chart, Kanban Board, Ca
 
 | 박승연 |
 | --- |
-| <img src="" width="200" height="200"/> |
+| <img src="https://github.com/user-attachments/assets/6161e664-bf97-452f-b6b0-6b384a643b7c" width="200" height="200"/> |
 
 </div>
 <br>
@@ -28,11 +28,12 @@ Task는 Epic 단위로 구조화할 수 있으며, Gantt Chart, Kanban Board, Ca
 ## 1. 개발 환경
 
 ### AI
-![Python]()
-![Fast API]()
-
-### 배포용 버전관리
+![Python]("https://github.com/user-attachments/assets/1582e55f-96a1-42c9-a038-0677ca66c994")
+![FastAPI]("https://github.com/user-attachments/assets/6e308186-a0f5-4b13-981b-f5029a189505")
+![MongoDB]("https://github.com/user-attachments/assets/4821fb33-7da7-497b-9cfc-0ffc0ba436e2")
 ![Docker]()
+![HuggingFace]("https://github.com/user-attachments/assets/5ec77529-b735-42b5-ac90-827e31b02de3")
+![OpenAI API]("https://github.com/user-attachments/assets/de344faf-a6b4-44eb-bf83-f5f03ff29d13")
 
 ### 협업 툴
 ![Notion](https://img.shields.io/badge/Notion-%23000000.svg?style=for-the-badge&logo=notion&logoColor=white)
@@ -55,7 +56,6 @@ Task는 Epic 단위로 구조화할 수 있으며, Gantt Chart, Kanban Board, Ca
 
 ### HuggingFace
 
-### 
 
 ### 브랜치 전략
 
@@ -69,18 +69,35 @@ Task는 Epic 단위로 구조화할 수 있으며, Gantt Chart, Kanban Board, Ca
 
 ## 4. 프로젝트 구조
 ``` bash
-.
-├── .github              # GitHub 설정 및 워크플로우
-├── mvp
+.env
+.gitignore
+├── .github               # GitHub 설정 및 워크플로우
+├── .pytest_cache        
+├── AI_hub/summary        # AI hub로부터 다운로드된 요약 학습 데이터
+├── Korpora               # Korpora로부터 다운로드된 NER 학습 데이터
+├── before-lang           # LangChain, LangGraph 적용 버전
+├── mvp                   # 배포 프로젝트
+├── tests                 # 테스트 코드
+├── venv                  # 가상머신 관련 파일
+├── docker-compose.yml    # 도커 DB 이미지 생성 파일 (Docker 빌드 이미지 실행 테스트용 at local) 
+├── Dockerfile            # 도커 이미지 생성 파일
+├── model_training.py     # 모델 학습 코드
+
 ```
 
-## 5. 구조적 장점
+## Fine-tuning
+### 사용한 데이터셋
+1. [Korpora: 네이버 x 창원대 NER 데이터](https://ko-nlp.github.io/Korpora/ko-docs/corpuslist/naver_changwon_ner.html)
+    - Korpora에 업로드된 NER 데이터로, 총 90000개의 샘플이 존재함. 해당 데이터와 동일한 개체명 분류 기준을 채택하여 2번의 AI Hub 데이터에 대해 개체명을 부여함.
+2. [AI Hub: 요약문 및 레포트 생성 데이터](https://aihub.or.kr/aihubdata/data/view.do?dataSetSn=582)
+    - 8종류의 서로 다른 자연어 문서에 대한 데이터. 이 중에서 4번 paper(정책 토론회), 5번 minute(공공기관 부서 및 부처 회의록) 데이터를 사용함. Korpora와 유사하게 개체명을 gpt를 사용하여 부여하고, 5번 minute 데이터를 파인튜닝 용으로 사용함.
 
+
+## 5. 구조적 장점
 
 ## 6. 테스트
 
 ### Pytest를 사용한 테스트 코드 작성
-
 
 
 ## 7. 개발 기간 및 작업 관리
@@ -96,7 +113,7 @@ Task는 Epic 단위로 구조화할 수 있으며, Gantt Chart, Kanban Board, Ca
 - **요청/QA 문서화**: Notion을 통해 요청 사항 정리 및 QA 문서로 재활용
 
 
-## AI Modules
+## 작성된 AI Modules
 1. feature_definition/ (기능 정의서 생성):
     - 사용자 입력 기능에 대한 feature_definition 생성
     - 사용자 수정 요청에 따른 feature definition 재생성
@@ -153,10 +170,3 @@ Task는 Epic 단위로 구조화할 수 있으며, Gantt Chart, Kanban Board, Ca
 
 ### Output Embedding
 - use BAAI/bge-m3 in common
-
-## Fine-tuning
-### 사용한 데이터셋
-1. [Korpora: 네이버 x 창원대 NER 데이터](https://ko-nlp.github.io/Korpora/ko-docs/corpuslist/naver_changwon_ner.html)
-    - Korpora에 업로드된 NER 데이터로, 총 90000개의 샘플이 존재함. 해당 데이터와 동일한 개체명 분류 기준을 채택하여 2번의 AI Hub 데이터에 대해 개체명을 부여함.
-2. [AI Hub: 요약문 및 레포트 생성 데이터](https://aihub.or.kr/aihubdata/data/view.do?dataSetSn=582)
-    - 8종류의 서로 다른 자연어 문서에 대한 데이터. 이 중에서 4번 paper(정책 토론회), 5번 minute(공공기관 부서 및 부처 회의록) 데이터를 사용함. Korpora와 유사하게 개체명을 gpt를 사용하여 부여하고, 5번 minute 데이터를 파인튜닝 용으로 사용함.
