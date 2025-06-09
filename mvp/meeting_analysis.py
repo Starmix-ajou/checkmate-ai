@@ -33,7 +33,7 @@ B-PER: 시작 토큰, I-PER: 중간 토큰, O: 그 외 토큰
 '''
 
 
-specify_model_name = "monologg/koelectra-base-v3-naver-ner"
+original_model_name = "monologg/koelectra-base-v3-naver-ner"
 '''
 스펙 짧게 정리: 
     - koelectra-base-v3 (한국어 ELECTRA 변형)이 기반 모델
@@ -45,8 +45,8 @@ specify_model_name = "monologg/koelectra-base-v3-naver-ner"
     - 속도: 빠름
 '''
 
-tokenizer = AutoTokenizer.from_pretrained(specify_model_name)
-model_for_ner = AutoModelForTokenClassification.from_pretrained(specify_model_name)
+tokenizer = AutoTokenizer.from_pretrained(original_model_name)
+model_for_ner = AutoModelForTokenClassification.from_pretrained(original_model_name)
 
 ### ==================== 회의 액션 아이템 생성 - 파인튜닝 모델 사용 ==================== ###
 async def create_action_items_finetuned(content: str):
@@ -80,7 +80,7 @@ async def create_action_items_finetuned(content: str):
         input_ids = inputs["input_ids"][0]
         id2label = model_for_ner.config.id2label
         tokens = tokenizer.convert_ids_to_tokens(input_ids)
-    
+
         current_entity = {"type": None, "text": "", "start": None}
     
         for i, pred in enumerate(predictions):
