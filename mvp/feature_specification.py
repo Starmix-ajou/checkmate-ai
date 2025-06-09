@@ -53,7 +53,12 @@ def calculate_priority(expectedDays: int, difficulty: int) -> int:
     Returns:
         개발 예상 시간(expectedDays: 0~30일)과 난이도(difficulty: 1~5)를
         선형 정규화 후 가중합하여 1~300 범위의 우선순위로 매핑.
+        
+    Raises:
+        TypeError: expectedDays나 difficulty가 정수가 아닌 경우
+        ValueError: expectedDays가 0~30 범위를 벗어나거나, difficulty가 1~5 범위를 벗어나는 경우
     """
+
     # 최대값/최소값 정의
     MAX_DAYS = 30
     MIN_DIFF, MAX_DIFF = 1, 5
