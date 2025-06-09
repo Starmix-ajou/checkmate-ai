@@ -15,7 +15,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from mongodb_setting import (get_epic_collection, get_feature_collection,
                              get_project_collection, get_task_collection,
-                             get_user_collection)
+                             get_user_collection, init_collections)
 from openai import AsyncOpenAI
 from project_member_utils import get_project_members
 
@@ -25,45 +25,6 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
-
-def check_collection_initialized():
-    collections = {
-        "feature_collection": feature_collection,
-        "project_collection": project_collection,
-        "epic_collection": epic_collection,
-        "task_collection": task_collection,
-        "user_collection": user_collection
-    }
-    
-    uninitialized_collections = []
-    for name, collection in collections.items():
-        if collection is None:
-            uninitialized_collections.append(name)
-    
-    if len(uninitialized_collections) > 0:
-        raise ValueError(f"다음의 collection들이 초기화되지 않았습니다: {uninitialized_collections}")
-    
-    logger.info("✅ 모든 collection이 정상적으로 초기화되었습니다.")
-    return True
-
-# db 초기화 함수
-async def init_collections():
-    global feature_collection, project_collection, epic_collection, task_collection, user_collection
-    feature_collection = None
-    project_collection = None
-    epic_collection = None
-    task_collection = None
-    user_collection = None
-    
-    feature_collection = await get_feature_collection()
-    project_collection = await get_project_collection()
-    epic_collection = await get_epic_collection()
-    task_collection = await get_task_collection()
-    user_collection = await get_user_collection()
-    
-    if not check_collection_initialized():
-        raise False
-    return True
 
 async def calculate_eff_mandays(efficiency_factor: float, number_of_developers: int, sprint_days: int, workhours_per_day: int) -> int:
     logger.info(f"🔍 개발자 수: {number_of_developers}명, 1일 개발 업무시간: {workhours_per_day}시간, 스프린트 주기: {sprint_days}일, 효율성 계수: {efficiency_factor}")
@@ -116,6 +77,7 @@ async def calculate_percentiles(tasks: List[Dict[str, Any]]) -> List[Dict[str, A
 3. create_task_from_null: project & epic의 description 사용
 '''
 async def create_task_from_feature(epic_id: str, feature_id: str, project_id: str, workhours_per_day: int) -> List[Dict[str, Any]]:
+    feature_collection, project_collection, epic_collection, task_collection, user_collection = await init_collections()
     logger.info(f"🔍 기존의 feature 정보로부터 task 정의 시작: {feature_id}")
     assert feature_id is not None, "feature로부터 정의된 epic에 대해 task를 정의하는 스텝이므로 feature_id가 존재해야 합니다."
     feature = await feature_collection.find_one({"featureId": feature_id})
@@ -209,6 +171,7 @@ async def create_task_from_feature(epic_id: str, feature_id: str, project_id: st
 
 
 async def create_task_from_epic(epic_id: str, project_id: str, task_db_data: List[Dict[str, Any]], workhours_per_day: int) -> List[Dict[str, Any]]:
+    feature_collection, project_collection, epic_collection, task_collection, user_collection = await init_collections()
     logger.info(f"🔍 기존의 epic과 task 정보로부터 task 정의 시작: {epic_id}")
     assert epic_id is not None, "epic에 _id가 없습니다."    # epic은 id가 없으면 안 됨
     assert len(task_db_data) > 0, "task_db_data가 매개변수로 전달되지 않음."
@@ -316,6 +279,7 @@ async def create_task_from_epic(epic_id: str, project_id: str, task_db_data: Lis
 
 
 async def create_task_from_null(epic_id: str, project_id: str, workhours_per_day: int) -> List[Dict[str, Any]]:
+    feature_collection, project_collection, epic_collection, task_collection, user_collection = await init_collections()
     logger.info(f"🔍 null로부터 task 정의 시작: {epic_id}")
     task_creation_from_null_prompt = ChatPromptTemplate.from_template(
     """
@@ -422,6 +386,7 @@ Sprint 생성 POST API에 라우팅 되는 함수
 '''
 
 async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]], start_date: datetime) -> Dict[str, Any]:
+    feature_collection, project_collection, epic_collection, task_collection, user_collection = await init_collections()
     logger.info(f"🔍 스프린트 생성 시작: {project_id}")
     assert project_id is not None, "project_id가 존재하지 않습니다."
     

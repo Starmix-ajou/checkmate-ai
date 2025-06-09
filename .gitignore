@@ -16,10 +16,10 @@ venv/
 
 # 프로젝트와 관련된 기타 docs 및 tests 파일 dismiss
 db_structure.txt
-tests/
 src/
 test.txt
 meeting_*.md
+test_caches/
 
 # 모델 학습 및 평가에 사용된 데이터 파일 dismiss
 AI_hub/

@@ -440,7 +440,7 @@ async def test_meeintg_analysis():
     project_id = "b5728b16-6610-4762-b178-bb71f56a6616"
     
     title = "꼼꼼한 회의록"
-    summary = await create_summary_hf(title, content, project_id)
+    summary = await create_summary(title, content, project_id)
     print(f"생성된 회의 요약: {summary}")
     
     # 회의 요약 생성 테스트
