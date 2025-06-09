@@ -11,8 +11,8 @@ async def test_get_project_members_success():
     mock_project_data = {
         "_id": "test-project",
         "members": [
-            {"id": "user1"},
-            {"id": "user2"}
+            MagicMock(id="user1", name="홍길동", profiles=[MagicMock(projectId="test-project", positions=["BE", "FE"])]),
+            MagicMock(id="user2", name="김철수", profiles=[MagicMock(projectId="test-project", positions=["FE"])])
         ]
     }
     

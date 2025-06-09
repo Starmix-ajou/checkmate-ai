@@ -33,7 +33,8 @@ async def test_redis_connection():
         return True
     except Exception as e:
         print(f"Redis 연결 실패: {str(e)}")
-        raise Exception(f"Redis 연결 실패: {str(e)}", exc_info=True) from e
+        logger.error(f"Redis 연결 실패: {str(e)}")
+        raise e
 
 async def save_to_redis(key: str, data: Any):
     logger.info(f"🔍 Redis 데이터 저장 호출 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -47,7 +48,8 @@ async def save_to_redis(key: str, data: Any):
         await redis_client.set(key, data)
         logger.info(f"✅ Redis에 데이터 저장 성공: {key}")
     except Exception as e:
-        raise Exception(f"❌ Redis 저장 중 오류 발생: {str(e)}", exc_info=True) from e
+        logger.error(f"❌ Redis 저장 중 오류 발생: {str(e)}")
+        raise e
 
 async def load_from_redis(key: str) -> Any:
     logger.info(f"🔍 Redis 데이터 로드 호출 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -61,7 +63,8 @@ async def load_from_redis(key: str) -> Any:
                 return data
         return None
     except Exception as e:
-        raise Exception(f"❌ Redis 로드 중 오류 발생: {str(e)}", exc_info=True) from e
+        logger.error(f"❌ Redis 로드 중 오류 발생: {str(e)}")
+        raise e
 
 if __name__ == "__main__":
     asyncio.run(test_redis_connection())
