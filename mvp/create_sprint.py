@@ -28,6 +28,10 @@ openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 async def calculate_eff_mandays(efficiency_factor: float, number_of_developers: int, sprint_days: int, workhours_per_day: int) -> int:
     logger.info(f"🔍 개발자 수: {number_of_developers}명, 1일 개발 업무시간: {workhours_per_day}시간, 스프린트 주기: {sprint_days}일, 효율성 계수: {efficiency_factor}")
+    if efficiency_factor <= 0:
+        raise Exception("효율성 계수는 0보다 커야 합니다.")
+    if number_of_developers <= 0:
+        raise Exception("개발자 수는 0보다 커야 합니다.")
     mandays = number_of_developers * sprint_days * workhours_per_day
     logger.info(f"⚙️  Sprint별 작업 배정 시간: {mandays}시간")
     eff_mandays = round(mandays * efficiency_factor)
@@ -392,7 +396,7 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
     
     # DB 콜렉션 인스턴스 생성 및 초기화
     initialize_db_collection = await init_collections()
-    assert initialize_db_collection is True, "collection 호출 및 초기화에 실패하였습니다. 다시 시도하세요."
+    assert initialize_db_collection is not None, "collection 호출 및 초기화에 실패하였습니다. 다시 시도하세요."
     
     ### 1단계: 이번 Sprint에 포함되는 epic들을 projectId로 조회한다. 이때 조회된 epic들이 epic_id를 갖는지 검사한다.
     try:
