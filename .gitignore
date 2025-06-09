@@ -3,6 +3,7 @@ mvp/redis-data.json
 mvp/mock_*.json
 mvp/requirements.in
 mvp/asset/
+mvp/tests/integration/*
 
 # 가상 환경 dismiss
 venv/
