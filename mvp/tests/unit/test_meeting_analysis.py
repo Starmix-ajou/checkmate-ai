@@ -1,93 +1,183 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from meeting_analysis import (analyze_meeting, convert_action_items_to_tasks,
+import torch
+from meeting_analysis import (analyze_meeting_document,
+                              convert_action_items_to_tasks,
                               create_action_items_gpt, create_summary)
 
 
 @pytest.mark.asyncio
-async def test_analyze_meeting_success():
-    """회의 분석 성공 테스트"""
-    mock_meeting_data = {
-        "_id": "test-meeting",
-        "projectId": "test-project",
-        "content": "회의 내용 테스트",
-        "participants": ["user1", "user2"],
-        "date": "2024-03-20"
-    }
+async def test_create_summary_success():
+    """회의 요약 생성 성공 테스트"""
+    title = "테스트 회의"
+    content = """
+    # 회의 안건
+    1. 프로젝트 진행 상황
+    2. 다음 단계 계획
     
-    mock_project_data = {
-        "_id": "test-project",
-        "name": "테스트 프로젝트",
-        "members": [
-            {"id": "user1"},
-            {"id": "user2"}
+    ## 프로젝트 진행 상황
+    - 현재 80% 완료
+    - 남은 작업: UI 개선
+    
+    ## 다음 단계 계획
+    - 다음 주까지 UI 개선 완료
+    - 테스트 진행
+    """
+    project_id = "test-project"
+    
+    mock_response = AsyncMock()
+    mock_response.content = '{"summary": "# 테스트 회의\\n\\n## 프로젝트 진행 상황\\n- 현재 80% 완료\\n- 남은 작업: UI 개선\\n\\n## 다음 단계 계획\\n- 다음 주까지 UI 개선 완료\\n- 테스트 진행"}'
+    
+    with patch('meeting_analysis.get_project_members', new_callable=AsyncMock) as mock_get_members, \
+         patch('meeting_analysis.ChatOpenAI') as mock_chat:
+        
+        mock_get_members.return_value = [
+            {"id": "user1", "name": "홍길동"},
+            {"id": "user2", "name": "김철수"}
         ]
-    }
+        mock_chat.return_value.ainvoke = AsyncMock(return_value=mock_response)
+        
+        result = await create_summary(title, content, project_id)
+        assert isinstance(result, str)
+        assert title in result
+        assert "프로젝트 진행 상황" in result
+        assert "다음 단계 계획" in result
+
+@pytest.mark.asyncio
+async def test_create_summary_empty_content():
+    """빈 내용으로 회의 요약 생성 테스트"""
+    with patch('meeting_analysis.get_project_members', new_callable=AsyncMock) as mock_get_members, \
+         patch('meeting_analysis.ChatOpenAI') as mock_chat:
+        
+        mock_get_members.return_value = []
+        mock_chat.return_value.ainvoke = AsyncMock(side_effect=Exception("GPT API 처리 중 오류 발생"))
+        
+        with pytest.raises(Exception):
+            await create_summary("테스트 회의", "", "test-project")
+
+class FakeAsyncCursor:
+    def __init__(self, data):
+        self._data = data
+
+    async def to_list(self, length=None):
+        return self._data
+
+
+@pytest.mark.asyncio
+async def test_create_action_items_gpt_success():
+    """GPT를 사용한 액션 아이템 생성 성공 테스트"""
+    content = """
+    회의 내용:
+    - 김승연이 10월 1일까지 보고서를 제출하기로 함
+    - 자료 정리는 다음 주까지 완료하기로 함
+    """
     
-    mock_user_data = [
+    result = await create_action_items_gpt(content)
+    assert isinstance(result, list)
+    assert len(result) > 0
+    assert all(isinstance(item, dict) for item in result)
+    assert all("description" in item for item in result)
+    assert all("assignee" in item for item in result)
+    assert all("endDate" in item for item in result)
+
+@pytest.mark.asyncio
+async def test_create_action_items_gpt_empty_content():
+    """빈 내용으로 GPT 액션 아이템 생성 테스트"""
+    with pytest.raises(Exception):
+        await create_action_items_gpt("")
+
+@pytest.mark.asyncio
+async def test_convert_action_items_to_tasks_success():
+    """액션 아이템을 태스크로 변환 성공 테스트"""
+    action_items = [
         {
-            "_id": "user1",
-            "name": "홍길동",
-            "profiles": [
-                {
-                    "projectId": "test-project",
-                    "positions": ["BE"]
-                }
-            ]
-        },
+            "description": "보고서 제출하기",
+            "assignee": "홍길동",
+            "endDate": "2024-10-01"
+        }
+    ]
+    project_id = "test-project"
+    
+    mock_epics = [
         {
-            "_id": "user2",
-            "name": "김철수",
-            "profiles": [
-                {
-                    "projectId": "test-project",
-                    "positions": ["FE"]
-                }
-            ]
+            "_id": "epic1",
+            "title": "문서 작업",
+            "description": "보고서 작성 및 제출"
         }
     ]
     
-    with patch('meeting_analysis.get_meeting_collection', new_callable=AsyncMock) as mock_meeting_collection, \
-         patch('meeting_analysis.get_project_collection', new_callable=AsyncMock) as mock_project_collection, \
-         patch('meeting_analysis.get_user_collection', new_callable=AsyncMock) as mock_user_collection:
-        
-        mock_meeting_collection.return_value.find_one = AsyncMock(return_value=mock_meeting_data)
-        mock_project_collection.return_value.find_one = AsyncMock(return_value=mock_project_data)
-        mock_user_collection.return_value.find_one = AsyncMock(side_effect=mock_user_data)
-        
-        result = await analyze_meeting("test-meeting")
-        
-        assert result is not None
-        assert "summary" in result
-        assert "action_items" in result
-        assert "participants" in result
-
-@pytest.mark.asyncio
-async def test_analyze_meeting_not_found():
-    """회의를 찾을 수 없는 경우 테스트"""
-    with patch('meeting_analysis.get_meeting_collection', new_callable=AsyncMock) as mock_meeting_collection:
-        mock_meeting_collection.return_value.find_one = AsyncMock(return_value=None)
-        
-        with pytest.raises(Exception, match="회의를 찾을 수 없습니다"):
-            await analyze_meeting("non-existent-meeting")
-
-@pytest.mark.asyncio
-async def test_analyze_meeting_no_project():
-    """프로젝트를 찾을 수 없는 경우 테스트"""
-    mock_meeting_data = {
-        "_id": "test-meeting",
-        "projectId": "non-existent-project",
-        "content": "회의 내용 테스트",
-        "participants": ["user1"],
-        "date": "2024-03-20"
-    }
+    mock_users = [
+        {
+            "_id": "user1",
+            "name": "홍길동",
+            "profiles": [{"projectId": "test-project", "positions": ["BE"]}]
+        }
+    ]
     
-    with patch('meeting_analysis.get_meeting_collection', new_callable=AsyncMock) as mock_meeting_collection, \
-         patch('meeting_analysis.get_project_collection', new_callable=AsyncMock) as mock_project_collection:
+    mock_response = AsyncMock()
+    mock_response.content = '{"actionItems": [{"title": "보고서 제출", "description": "보고서 제출하기", "assigneeId": "user1", "endDate": "2024-10-01", "epicId": "epic1"}]}'
+    
+    with patch('meeting_analysis.get_epic_collection', new_callable=AsyncMock) as mock_epic_collection, \
+         patch('meeting_analysis.get_project_members', new_callable=AsyncMock) as mock_get_members, \
+         patch('meeting_analysis.get_user_collection', new_callable=AsyncMock) as mock_user_collection, \
+         patch('meeting_analysis.get_project_collection', new_callable=AsyncMock) as mock_project_collection, \
+         patch('meeting_analysis.ChatOpenAI') as mock_chat:
         
-        mock_meeting_collection.return_value.find_one = AsyncMock(return_value=mock_meeting_data)
-        mock_project_collection.return_value.find_one = AsyncMock(return_value=None)
+        # MongoDB 컬렉션 모의 설정
+        mock_get_members.return_value = mock_users
+        mock_user_collection.return_value.find_one = AsyncMock(return_value=mock_users[0])
+        mock_project_collection.return_value.find_one = AsyncMock(return_value={"members": [{"id": "user1"}]})
+        mock_chat.return_value.ainvoke = AsyncMock(return_value=mock_response)
         
-        with pytest.raises(Exception, match="프로젝트를 찾을 수 없습니다"):
-            await analyze_meeting("test-meeting") 
+        # MongoDB 컬렉션 모의 설정
+        mock_epic_collection_instance = MagicMock()
+        mock_epic_collection_instance.find.return_value = FakeAsyncCursor(mock_epics)
+        mock_epic_collection.return_value = mock_epic_collection_instance
+        
+        result = await convert_action_items_to_tasks(action_items, project_id)
+        assert isinstance(result, list)
+        assert len(result) > 0
+        assert all(isinstance(item, dict) for item in result)
+        assert all("title" in item for item in result)
+        assert all("description" in item for item in result)
+        assert all("assigneeId" in item for item in result)
+        assert all("endDate" in item for item in result)
+        assert all("epicId" in item for item in result)
+
+@pytest.mark.asyncio
+async def test_convert_action_items_to_tasks_empty_input():
+    """빈 액션 아이템으로 태스크 변환 테스트"""
+    with pytest.raises(AssertionError):
+        await convert_action_items_to_tasks(None, "test-project")
+
+@pytest.mark.asyncio
+async def test_analyze_meeting_document_success():
+    """회의 문서 분석 성공 테스트"""
+    title = "테스트 회의"
+    content = """
+    # 회의 안건
+    1. 프로젝트 진행 상황
+    2. 다음 단계 계획
+    """
+    project_id = "test-project"
+    
+    with patch('meeting_analysis.create_summary', new_callable=AsyncMock) as mock_create_summary, \
+         patch('meeting_analysis.create_action_items_gpt', new_callable=AsyncMock) as mock_create_action_items, \
+         patch('meeting_analysis.convert_action_items_to_tasks', new_callable=AsyncMock) as mock_convert_tasks:
+        
+        mock_create_summary.return_value = "요약 내용"
+        mock_create_action_items.return_value = [{"description": "테스트", "assignee": "홍길동", "endDate": "2024-10-01"}]
+        mock_convert_tasks.return_value = [{"title": "테스트", "description": "테스트", "assigneeId": "user1", "endDate": "2024-10-01", "epicId": "epic1"}]
+        
+        result = await analyze_meeting_document(title, content, project_id)
+        assert isinstance(result, dict)
+        assert "summary" in result
+        assert "actionItems" in result
+        assert isinstance(result["actionItems"], list)
+
+@pytest.mark.asyncio
+async def test_analyze_meeting_document_empty_input():
+    """빈 입력으로 회의 문서 분석 테스트"""
+    with pytest.raises(Exception):
+        await analyze_meeting_document("", "", "test-project")
