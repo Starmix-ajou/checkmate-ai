@@ -111,12 +111,11 @@ async def create_feature_definition(email: str, description: str, definition_url
         # features, suggestions 추출
         features = gpt_result["features"]
         suggestions = gpt_result["suggestions"][0]["answers"]
-        print("기능 정의서로부터 추출한 기능 목록: ", features)
-        print("기능 정의서로부터 추출한 제안 목록: ", suggestions)
+        logger.info(f"✅ 기능 정의서로부터 추출한 기능 목록: {features}")
+        logger.info(f"👉 기능 정의서로부터 추출한 제안 목록: {suggestions}")
         
     else:
-        print("기능 정의서가 존재하지 않습니다.")
-        logger.info("기능 정의서가 존재하지 않습니다.")
+        logger.info("❌ 기능 정의서가 존재하지 않습니다.")
         
         # GPT API 호출을 위한 프롬프트 정의
         create_feature_prompt = ChatPromptTemplate.from_template("""
