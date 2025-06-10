@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 from dotenv import load_dotenv
 from feature_specification import calculate_priority
-from gpt_utils import extract_json_from_gpt_response
+from gpt_utils import extract_json_from_gpt_response, safe_chat_completion
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from mongodb_setting import (get_epic_collection, get_feature_collection,
@@ -136,7 +136,7 @@ async def create_task_from_feature(epic_id: str, feature_id: str, project_id: st
         model_name="gpt-4o-mini",
         temperature=0.4,
     )
-    response = await llm.ainvoke(messages)
+    response = await safe_chat_completion(llm, messages)
 
     try:
         content = response.content
@@ -239,7 +239,7 @@ async def create_task_from_epic(epic_id: str, project_id: str, task_db_data: Lis
         null_fields = null_fields,
         epic_title = epic["title"],
         epic_description = epic["description"] if epic["description"] is not None else "null",
-        task = task_db_data,
+        task_db_data = task_db_data,
         project_members = project_members,
         workhours_per_day = workhours_per_day
     )
