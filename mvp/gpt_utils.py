@@ -1,8 +1,21 @@
+import asyncio
 import json
 import logging
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List
+
+from langchain_openai import ChatOpenAI
 
 logger = logging.getLogger(__name__)
+
+async def safe_chat_completion(llm: ChatOpenAI, messages, retries=3):
+    for i in range(retries):
+        try:
+            response = await llm.ainvoke(messages)
+            return response
+        except Exception as e:
+            print(f"[{i+1}/{retries}] OpenAI API 오류: {e}")
+            await asyncio.sleep(1)
+    raise RuntimeError("ChatCompletion API 요청 실패")
 
 
 def extract_json_from_gpt_response(content: str) -> List[Dict[str, Any]]:
