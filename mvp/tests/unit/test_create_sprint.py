@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -6,6 +6,13 @@ from create_sprint import (calculate_eff_mandays, calculate_percentiles,
                            create_sprint, create_task_from_epic,
                            create_task_from_feature, create_task_from_null)
 
+
+class FakeAsyncCursor:
+    def __init__(self, data):
+        self._data = data
+
+    async def to_list(self, length=None):
+        return self._data
 
 @pytest.mark.asyncio
 async def test_calculate_eff_mandays():
@@ -67,10 +74,10 @@ async def test_create_task_from_feature():
         "useCase": "사용자 로그인",
         "input": "이메일, 비밀번호",
         "output": "로그인 성공/실패",
-        "startDate": None,
-        "endDate": None,
+        "startDate": "2024-03-01",
+        "endDate": "2024-03-05",
         "difficulty": 3,
-        "expected_workhours": 10
+        "expectedDays": 10
     }
     
     mock_response = AsyncMock()
@@ -130,13 +137,24 @@ async def test_create_task_from_epic():
         "description": "사용자 로그인 기능 구현"
     }
     
-    mock_task_data = [{
-        "title": "로그인 API 구현",
-        "description": None,
-        "assignee": None,
-        "difficulty": 3,
-        "expected_workhours": 10
-    }]
+    mock_task_data = [
+        {
+            "title": "로그인 API 구현",
+            "description": "로그인 API 엔드포인트 구현",
+            "assignee": "홍길동",
+            "startDate": datetime.now() - timedelta(days=1),
+            "endDate": datetime.now() + timedelta(days=1),
+            "priority": 150
+        },
+        {
+            "title": "회원가입 API 구현",
+            "description": "회원가입 API 엔드포인트 구현",
+            "assignee": "김철수",
+            "startDate": datetime.now() - timedelta(days=1),
+            "endDate": datetime.now() + timedelta(days=1),
+            "priority": 150
+        },
+    ]
     
     mock_response = AsyncMock()
     mock_response.content = """
@@ -158,11 +176,11 @@ async def test_create_task_from_epic():
     mock_llm.ainvoke = AsyncMock(return_value=mock_response)
     
     mock_collections = (
-        MagicMock(),  # feature_collection
-        MagicMock(),  # project_collection
-        MagicMock(),  # epic_collection
-        MagicMock(),  # task_collection
-        MagicMock()   # user_collection
+        AsyncMock(),  # feature_collection
+        AsyncMock(),  # project_collection
+        AsyncMock(),  # epic_collection
+        AsyncMock(),  # task_collection
+        AsyncMock()   # user_collection
     )
     
     with patch('create_sprint.ChatOpenAI', return_value=mock_llm), \
@@ -219,10 +237,10 @@ async def test_create_task_from_null():
     mock_llm.ainvoke = AsyncMock(return_value=mock_response)
     
     mock_collections = (
-        MagicMock(),  # feature_collection
-        MagicMock(),  # project_collection
-        MagicMock(),  # epic_collection
-        MagicMock(),  # task_collection
+        AsyncMock(),  # feature_collection
+        AsyncMock(),  # project_collection
+        AsyncMock(),  # epic_collection
+        AsyncMock(),  # task_collection
         MagicMock()   # user_collection
     )
     
@@ -245,13 +263,6 @@ async def test_create_task_from_null():
     # 실패 케이스: epic을 찾을 수 없음
     pytest.raises(Exception)
 
-class FakeAsyncCursor:
-    def __init__(self, data):
-        self._data = data
-
-    async def to_list(self, length=None):
-        return self._data
-
 @pytest.mark.asyncio
 async def test_create_sprint():
     """스프린트 생성 테스트"""
@@ -262,9 +273,18 @@ async def test_create_sprint():
             "title": "로그인 API 구현",
             "description": "로그인 API 엔드포인트 구현",
             "assignee": "홍길동",
-            "startDate": "2024-03-01",
-            "endDate": "2024-03-05",
+            "startDate": datetime.now() - timedelta(days=1),    # datetime 간 차이 계산을 str 형태로 수행하는 오류 처리
+            "endDate": datetime.now() + timedelta(days=1),
             "priority": 150
+        },
+        {
+            "_id": "task2",
+            "title": "회원가입 API 구현",
+            "description": "회원가입 API 엔드포인트 구현",
+            "assignee": "김철수",
+            "startDate": datetime.now() - timedelta(days=1),    # datetime 간 차이 계산을 str 형태로 수행하는 오류 처리
+            "endDate": datetime.now() + timedelta(days=1),
+            "priority": 230
         }
     ]
     
@@ -279,8 +299,8 @@ async def test_create_sprint():
     
     mock_project = {
         "_id": "test-project",
-        "startDate": "2024-03-01",
-        "endDate": "2024-03-31",
+        "startDate": datetime.now() - timedelta(days=10),
+        "endDate": datetime.now() + timedelta(days=30),
         "members": ["user1", "user2"]
     }
     
@@ -296,12 +316,24 @@ async def test_create_sprint():
         patch('create_sprint.get_project_members', new_callable=AsyncMock) as mock_get_members:
 
         mock_collections = (
-            MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock()
+            AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock()
         )
 
+        # 프로젝트 정보
         mock_collections[1].find_one = AsyncMock(return_value=mock_project)
-        mock_collections[2].find.return_value = FakeAsyncCursor(mock_epics)
-        mock_collections[3].find.return_value = FakeAsyncCursor(mock_tasks)
+        
+        # epic_collection.find().to_list() mock
+        mock_epic_cursor = AsyncMock()
+        mock_epic_cursor._data = mock_epics
+        mock_epic_cursor.to_list = AsyncMock(return_value=mock_epics)
+        mock_collections[2].find = MagicMock(return_value=mock_epic_cursor) # 왜 epic에 _id가 없을까?
+        
+        # task_collection.find().to_list() mock
+        mock_task_cursor = AsyncMock()
+        mock_task_cursor.to_list = AsyncMock(return_value=mock_tasks)
+        mock_collections[3].find = MagicMock(return_value=mock_task_cursor)
+
+        # user_collection.find_one() mock
         mock_collections[4].find_one.return_value = mock_users[0]
 
         mock_init_collections.return_value = mock_collections
