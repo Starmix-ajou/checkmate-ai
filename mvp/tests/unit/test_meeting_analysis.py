@@ -7,6 +7,13 @@ from meeting_analysis import (analyze_meeting_document,
                               create_action_items_gpt, create_summary)
 
 
+class FakeAsyncCursor:
+    def __init__(self, data):
+        self._data = data
+
+    async def to_list(self, length=None):
+        return self._data
+
 @pytest.mark.asyncio
 async def test_create_summary_success():
     """회의 요약 생성 성공 테스트"""
@@ -55,13 +62,6 @@ async def test_create_summary_empty_content():
         
         with pytest.raises(Exception):
             await create_summary("테스트 회의", "", "test-project")
-
-class FakeAsyncCursor:
-    def __init__(self, data):
-        self._data = data
-
-    async def to_list(self, length=None):
-        return self._data
 
 
 @pytest.mark.asyncio
