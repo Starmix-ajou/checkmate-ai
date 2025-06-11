@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -92,8 +93,8 @@ class CreateMeetingResponse(BaseModel):
 
 app = FastAPI(docs_url="/docs")
 
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     logger.info(f"🚀 Uvicorn 서버 시작 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     try:
         # Redis 연결 테스트
@@ -106,6 +107,9 @@ async def startup_event():
     except Exception as e:
         logger.error(f"서버 시작 중 오류 발생: {str(e)}")
         raise e
+    yield
+
+app = FastAPI(docs_url="/docs", lifespan=lifespan)
 
 @app.exception_handler(Exception)
 async def global_error_handler(request: Request, exc: Exception):

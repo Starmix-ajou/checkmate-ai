@@ -171,7 +171,11 @@ async def create_feature_definition(email: str, description: str, definition_url
     all_features = features + suggestions
         
     # Redis에 저장
-    await save_to_redis(f"features:{email}", all_features)
+    try:
+        await save_to_redis(f"features:{email}", all_features)
+    except Exception as e:
+        logger.error(f"Redis에 데이터 저장 중 오류 발생: {str(e)}", exc_info=True)
+        raise Exception(f"Redis에 데이터 저장 중 오류 발생: {str(e)}") from e
     logger.info(f"Redis에 데이터 저장 완료: {all_features}")
     
     return result
@@ -196,7 +200,7 @@ async def update_feature_definition(email: str, feedback: str) -> Dict[str, Any]
         feature_data = await load_from_redis(f"features:{email}")
     except Exception as e:
         logger.error(f"Redis에서 데이터 로드 중 오류 발생: {str(e)}", exc_info=True)
-        raise Exception(f"Redis에서 데이터 로드 중 오류 발생: {str(e)}", exc_info=True) from e
+        raise Exception(f"Redis에서 데이터 로드 중 오류 발생: {str(e)}") from e
     
     if not feature_data:
         raise ValueError(f"Project information for user {email} not found")
@@ -317,7 +321,11 @@ async def update_feature_definition(email: str, feedback: str) -> Dict[str, Any]
         logger.info(f"업데이트 후 Redis 데이터: {feature_data}")
     
         # Redis에 저장
-        await save_to_redis(f"features:{email}", feature_data)
+        try:
+            await save_to_redis(f"features:{email}", feature_data)
+        except Exception as e:
+            logger.error(f"Redis 업데이트 중 오류 발생: {str(e)}", exc_info=True)
+            raise Exception(f"Redis 업데이트 중 오류 발생: {str(e)}") from e
     
         # API 응답용 결과 반환
         result = {
