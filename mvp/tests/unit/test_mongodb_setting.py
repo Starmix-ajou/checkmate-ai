@@ -99,6 +99,8 @@ async def test_collection_is_initialized(mock_mongo):
     mock_collection = MagicMock()
     mock_db.__getitem__.return_value = mock_collection
     
-    await init_collections()
+    collections = await init_collections()
+    assert len(collections) == 5
+    assert all(collection is not None for collection in collections)
     result = collection_is_initialized()
     assert result is True
