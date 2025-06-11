@@ -154,24 +154,16 @@ def test_error_handling(test_client):
 
 # 서버 시작 이벤트 테스트
 @pytest.mark.asyncio
-async def test_startup_event():
+async def test_lifespan():
     """서버 시작 이벤트 테스트"""
-    # 새로운 FastAPI 앱 인스턴스 생성
-    test_app = FastAPI()
-    
-    # 원본 앱의 startup 이벤트 핸들러를 가져옴
-    startup_handler = app.router.on_startup[0]
-    
-    # 이벤트 핸들러를 테스트 앱에 등록
-    test_app.router.on_startup.append(startup_handler)
+    from serve import lifespan
     
     with patch('serve.test_redis_connection', new_callable=AsyncMock) as mock_redis, \
          patch('serve.test_mongodb_connection', new_callable=AsyncMock) as mock_mongo:
         mock_redis.return_value = True
         mock_mongo.return_value = True
         
-        # 테스트 앱의 startup 이벤트 실행
-        await test_app.router.startup()
-        
-        mock_redis.assert_called_once()
-        mock_mongo.assert_called_once()
+        # lifespan 컨텍스트 매니저 실행
+        async with lifespan(app):
+            mock_redis.assert_called_once()
+            mock_mongo.assert_called_once()
