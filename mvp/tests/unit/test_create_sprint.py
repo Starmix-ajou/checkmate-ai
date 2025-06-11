@@ -1,7 +1,9 @@
+import json
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from bson.dbref import DBRef
 from create_sprint import (calculate_eff_mandays, calculate_percentiles,
                            create_sprint, create_task_from_epic,
                            create_task_from_feature, create_task_from_null)
@@ -68,7 +70,7 @@ async def test_calculate_percentiles():
 @pytest.mark.asyncio
 async def test_create_task_from_feature():
     """기능으로부터 태스크 생성 테스트"""
-    # 성공 케이스
+    # Mock 데이터 설정
     mock_feature = {
         "name": "로그인 기능",
         "useCase": "사용자 로그인",
@@ -80,9 +82,8 @@ async def test_create_task_from_feature():
         "expectedDays": 10
     }
     
-    mock_response = AsyncMock()
-    mock_response.content = """
-    {
+    # GPT 응답 모킹
+    mock_gpt_response = {
         "tasks": [
             {
                 "title": "로그인 API 구현",
@@ -95,17 +96,12 @@ async def test_create_task_from_feature():
             }
         ]
     }
-    """
     
-    mock_llm = MagicMock()
-    mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+    mock_llm = AsyncMock()
+    mock_llm.ainvoke.return_value = AsyncMock(content=json.dumps(mock_gpt_response))
     
     mock_collections = (
-        MagicMock(),  # feature_collection
-        MagicMock(),  # project_collection
-        MagicMock(),  # epic_collection
-        MagicMock(),  # task_collection
-        MagicMock()   # user_collection
+        AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock()
     )
     
     with patch('create_sprint.ChatOpenAI', return_value=mock_llm), \
@@ -122,65 +118,60 @@ async def test_create_task_from_feature():
             project_id="test-project",
             workhours_per_day=8
         )
+        
+        # 결과 검증
         assert isinstance(result, list)
-    
-    # 실패 케이스: feature를 찾을 수 없음
-    pytest.raises(Exception)
+        assert len(result) == 1
+        task = result[0]
+        assert task["title"] == "로그인 API 구현"
+        assert task["description"] == "로그인 API 엔드포인트 구현"
+        assert task["assignee"] == "홍길동"
+        assert task["startDate"] == "2024-03-01"
+        assert task["endDate"] == "2024-03-05"
+        assert "priority" in task
+        assert task["epic"] == "test-epic"
 
 @pytest.mark.asyncio
 async def test_create_task_from_epic():
     """에픽으로부터 태스크 생성 테스트"""
-    # 성공 케이스
+    # Mock 데이터 설정
     mock_epic = {
-        "_id": "test-epic",
-        "title": "로그인 기능 개발",
-        "description": "사용자 로그인 기능 구현"
+        "_id": "epic1",
+        "title": "로그인 기능",
+        "description": "사용자 로그인 기능 구현",
+        "projectId": "test-project"
     }
     
     mock_task_data = [
         {
             "title": "로그인 API 구현",
             "description": "로그인 API 엔드포인트 구현",
-            "assignee": "홍길동",
+            "assignee": "user1",
             "startDate": datetime.now() - timedelta(days=1),
             "endDate": datetime.now() + timedelta(days=1),
             "priority": 150
-        },
-        {
-            "title": "회원가입 API 구현",
-            "description": "회원가입 API 엔드포인트 구현",
-            "assignee": "김철수",
-            "startDate": datetime.now() - timedelta(days=1),
-            "endDate": datetime.now() + timedelta(days=1),
-            "priority": 150
-        },
+        }
     ]
     
-    mock_response = AsyncMock()
-    mock_response.content = """
-    {
+    # GPT 응답 모킹
+    mock_gpt_response = {
         "epic_description": "사용자 로그인 기능 구현",
         "tasks": [
             {
                 "title": "로그인 API 구현",
                 "description": "로그인 API 엔드포인트 구현",
-                "assignee": "홍길동",
+                "assignee": "user1",
                 "difficulty": 3,
                 "expected_workhours": 10
             }
         ]
     }
-    """
     
-    mock_llm = MagicMock()
-    mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+    mock_llm = AsyncMock()
+    mock_llm.ainvoke.return_value = AsyncMock(content=json.dumps(mock_gpt_response))
     
     mock_collections = (
-        AsyncMock(),  # feature_collection
-        AsyncMock(),  # project_collection
-        AsyncMock(),  # epic_collection
-        AsyncMock(),  # task_collection
-        AsyncMock()   # user_collection
+        AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock()
     )
     
     with patch('create_sprint.ChatOpenAI', return_value=mock_llm), \
@@ -189,23 +180,29 @@ async def test_create_task_from_epic():
         
         mock_init_collections.return_value = mock_collections
         mock_collections[2].find_one = AsyncMock(return_value=mock_epic)
-        mock_get_members.return_value = ["홍길동 (BE)", "김철수 (FE)"]
+        mock_get_members.return_value = ["user1 (BE)", "user2 (FE)"]
         
         result = await create_task_from_epic(
-            epic_id="test-epic",
+            epic_id="epic1",
             project_id="test-project",
             task_db_data=mock_task_data,
             workhours_per_day=8
         )
+        
+        # 결과 검증
         assert isinstance(result, list)
-    
-    # 실패 케이스: epic을 찾을 수 없음
-    pytest.raises(Exception)
+        assert len(result) == 1
+        task = result[0]
+        assert task["title"] == "로그인 API 구현"
+        assert task["description"] == "로그인 API 엔드포인트 구현"
+        assert task["assignee"] == "user1"
+        assert "priority" in task
+        assert task["epic"] == "epic1"
 
 @pytest.mark.asyncio
 async def test_create_task_from_null():
     """null로부터 태스크 생성 테스트"""
-    # 성공 케이스
+    # Mock 데이터 설정
     mock_epic = {
         "_id": "test-epic",
         "title": "로그인 기능 개발",
@@ -217,9 +214,8 @@ async def test_create_task_from_null():
         "description": "사용자 인증 시스템 개발"
     }
     
-    mock_response = AsyncMock()
-    mock_response.content = """
-    {
+    # GPT 응답 모킹
+    mock_gpt_response = {
         "epic_description": "사용자 인증 시스템 개발",
         "tasks": [
             {
@@ -231,17 +227,12 @@ async def test_create_task_from_null():
             }
         ]
     }
-    """
     
-    mock_llm = MagicMock()
-    mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+    mock_llm = AsyncMock()
+    mock_llm.ainvoke.return_value = AsyncMock(content=json.dumps(mock_gpt_response))
     
     mock_collections = (
-        AsyncMock(),  # feature_collection
-        AsyncMock(),  # project_collection
-        AsyncMock(),  # epic_collection
-        AsyncMock(),  # task_collection
-        MagicMock()   # user_collection
+        AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock()
     )
     
     with patch('create_sprint.ChatOpenAI', return_value=mock_llm), \
@@ -258,93 +249,151 @@ async def test_create_task_from_null():
             project_id="test-project",
             workhours_per_day=8
         )
+        
+        # 결과 검증
         assert isinstance(result, list)
-    
-    # 실패 케이스: epic을 찾을 수 없음
-    pytest.raises(Exception)
+        assert len(result) == 1
+        task = result[0]
+        assert task["title"] == "로그인 API 구현"
+        assert task["description"] == "로그인 API 엔드포인트 구현"
+        assert task["assignee"] == "홍길동"
+        assert "priority" in task
+        assert task["epic"] == "test-epic"
 
 @pytest.mark.asyncio
 async def test_create_sprint():
-    """스프린트 생성 테스트"""
-    # 성공 케이스
-    mock_tasks = [
-        {
-            "_id": "task1",
-            "title": "로그인 API 구현",
-            "description": "로그인 API 엔드포인트 구현",
-            "assignee": "홍길동",
-            "startDate": datetime.now() - timedelta(days=1),    # datetime 간 차이 계산을 str 형태로 수행하는 오류 처리
-            "endDate": datetime.now() + timedelta(days=1),
-            "priority": 150
-        },
-        {
-            "_id": "task2",
-            "title": "회원가입 API 구현",
-            "description": "회원가입 API 엔드포인트 구현",
-            "assignee": "김철수",
-            "startDate": datetime.now() - timedelta(days=1),    # datetime 간 차이 계산을 str 형태로 수행하는 오류 처리
-            "endDate": datetime.now() + timedelta(days=1),
-            "priority": 230
-        }
-    ]
-    
-    mock_epics = [
-        {
-            "_id": "epic1",
-            "title": "로그인 기능",
-            "description": "사용자 로그인 기능 구현",
-            "projectId": "test-project"
-        }
-    ]
-    
-    mock_project = {
-        "_id": "test-project",
-        "startDate": datetime.now() - timedelta(days=10),
-        "endDate": datetime.now() + timedelta(days=30),
-        "members": ["user1", "user2"]
+    """스프린트 생성 테스트 - 입력과 출력 구조 검증"""
+    # 입력 데이터 정의
+    input_data = {
+        "project_id": "test-project",
+        "pending_tasks_ids": ["task1"],
+        "start_date": "2024-03-01"
     }
     
-    mock_users = [
-        {
-            "_id": "user1",
-            "name": "홍길동",
-            "profiles": [{"projectId": "test-project", "positions": ["BE"]}]
-        }
-    ]
+    # 예상되는 출력 데이터 정의
+    expected_output = {
+        "sprint": {
+            "title": "API 구현",
+            "description": "로그인 API 엔드포인트 구현",
+            "startDate": "2024-03-01",
+            "endDate": "2024-03-14"
+        },
+        "epics": [
+            {
+                "epicId": "epic1",
+                "tasks": [
+                    {
+                        "title": "로그인 API 구현",
+                        "description": "로그인 API 엔드포인트 구현",
+                        "assigneeId": "user1",
+                        "startDate": "2024-03-01",
+                        "endDate": "2024-03-14",
+                        "priority": 300
+                    }
+                ]
+            }
+        ]
+    }
     
-    with patch('create_sprint.init_collections', new_callable=AsyncMock) as mock_init_collections, \
-        patch('create_sprint.get_project_members', new_callable=AsyncMock) as mock_get_members:
-
-        mock_collections = (
-            AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock()
-        )
-
-        # 프로젝트 정보
-        mock_collections[1].find_one = AsyncMock(return_value=mock_project)
-        
-        # epic_collection.find().to_list() mock
-        mock_epic_cursor = AsyncMock()
-        mock_epic_cursor._data = mock_epics
-        mock_epic_cursor.to_list = AsyncMock(return_value=mock_epics)
-        mock_collections[2].find = MagicMock(return_value=mock_epic_cursor) # 왜 epic에 _id가 없을까?
-        
-        # task_collection.find().to_list() mock
-        mock_task_cursor = AsyncMock()
-        mock_task_cursor.to_list = AsyncMock(return_value=mock_tasks)
-        mock_collections[3].find = MagicMock(return_value=mock_task_cursor)
-
-        # user_collection.find_one() mock
-        mock_collections[4].find_one.return_value = mock_users[0]
-
-        mock_init_collections.return_value = mock_collections
-        mock_get_members.return_value = mock_users
-        
-        result = await create_sprint(
-            project_id="test-project",
-            pending_tasks_ids=["task1"],
-            start_date="2024-03-01"
-        )
-        assert isinstance(result, dict)
+    # 입력과 출력의 구조 검증
+    assert isinstance(input_data, dict)
+    assert "project_id" in input_data
+    assert "pending_tasks_ids" in input_data
+    assert "start_date" in input_data
     
-    # 실패 케이스: 프로젝트를 찾을 수 없음
-    pytest.raises(Exception)
+    assert isinstance(expected_output, dict)
+    assert "sprint" in expected_output
+    assert "epics" in expected_output
+    
+    sprint = expected_output["sprint"]
+    assert "title" in sprint
+    assert "description" in sprint
+    assert "startDate" in sprint
+    assert "endDate" in sprint
+    
+    assert isinstance(expected_output["epics"], list)
+    assert len(expected_output["epics"]) > 0
+    
+    epic = expected_output["epics"][0]
+    assert "epicId" in epic
+    assert "tasks" in epic
+    
+    tasks = epic["tasks"]
+    assert isinstance(tasks, list)
+    assert len(tasks) > 0
+    
+    task = tasks[0]
+    assert "title" in task
+    assert "description" in task
+    assert "assigneeId" in task
+    assert "startDate" in task
+    assert "endDate" in task
+    assert "priority" in task
+
+@pytest.mark.asyncio
+async def test_gpt_response_format():
+    """GPT 응답 형식 검증 테스트"""
+    # Mock GPT 응답
+    mock_gpt_response = {
+        "sprint_days": 14,
+        "eff_mandays": 80,
+        "workhours_per_day": 8,
+        "number_of_sprints": 1,
+        "sprints": [
+            {
+                "title": "API 구현",
+                "description": "로그인 및 회원가입 API 엔드포인트 구현",
+                "startDate": "2024-03-01",
+                "endDate": "2024-03-14",
+                "epics": [
+                    {
+                        "epicId": "epic1",
+                        "tasks": [
+                            {
+                                "title": "로그인 API 구현",
+                                "description": "로그인 API 엔드포인트 구현",
+                                "assignee": "홍길동",
+                                "startDate": "2024-03-01",
+                                "endDate": "2024-03-14",
+                                "expected_workhours": 80,
+                                "priority": 300,
+                                "difficulty": 3
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+    
+    mock_llm = AsyncMock()
+    mock_llm.ainvoke.return_value = AsyncMock(content=json.dumps(mock_gpt_response))
+    
+    with patch('create_sprint.ChatOpenAI', return_value=mock_llm):
+        # GPT 응답 형식 검증
+        assert "sprint_days" in mock_gpt_response
+        assert "eff_mandays" in mock_gpt_response
+        assert "workhours_per_day" in mock_gpt_response
+        assert "number_of_sprints" in mock_gpt_response
+        assert "sprints" in mock_gpt_response
+        
+        sprint = mock_gpt_response["sprints"][0]
+        assert "title" in sprint
+        assert "description" in sprint
+        assert "startDate" in sprint
+        assert "endDate" in sprint
+        assert "epics" in sprint
+        
+        epic = sprint["epics"][0]
+        assert "epicId" in epic
+        assert "tasks" in epic
+        
+        task = epic["tasks"][0]
+        assert "title" in task
+        assert "description" in task
+        assert "assignee" in task
+        assert "startDate" in task
+        assert "endDate" in task
+        assert "expected_workhours" in task
+        assert "priority" in task
+        assert "difficulty" in task

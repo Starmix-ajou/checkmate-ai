@@ -67,7 +67,7 @@ def extract_json_from_gpt_response(content: str) -> List[Dict[str, Any]]:
         error_pos = int(e.pos) if isinstance(e.pos, str) else e.pos
         error_context = content[max(0, error_pos-10):min(len(content), error_pos+10)]
         logger.error(f"❌ JSON 파싱 실패: 위치 {error_pos}, 문제 문자 주변: {error_context}")
-        raise ValueError(f"GPT 응답 파싱 중 오류 발생: {str(e)}")
+        raise e
     
     return parsed
 
