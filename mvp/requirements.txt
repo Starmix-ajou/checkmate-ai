@@ -1,3 +1,4 @@
+coverage==7.4.3
 absl-py==2.3.0
 aiofiles==23.2.1
 aiohappyeyeballs==2.6.1
