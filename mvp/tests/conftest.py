@@ -3,10 +3,11 @@ from unittest.mock import patch
 
 import mongomock
 import pytest
-from dotenv import load_dotenv
+
+#from dotenv import load_dotenv
 
 # 환경 변수 로드
-load_dotenv()
+#load_dotenv()
 
 #@pytest.fixture(scope="session")
 #def test_env():
