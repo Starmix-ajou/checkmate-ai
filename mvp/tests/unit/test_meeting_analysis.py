@@ -61,12 +61,10 @@ async def test_create_summary_success():
 async def test_create_summary_empty_content():
     """빈 내용으로 회의 요약 생성 테스트"""
     with patch('meeting_analysis.ChatOpenAI') as mock_chat, \
-         patch('meeting_analysis.get_project_members', new_callable=AsyncMock) as mock_get_members, \
-         patch('meeting_analysis.login') as mock_login:
+         patch('meeting_analysis.get_project_members', new_callable=AsyncMock) as mock_get_members:
         
         mock_chat.return_value.ainvoke = AsyncMock(side_effect=Exception("GPT API 처리 중 오류 발생"))
         mock_get_members.return_value = [("홍길동", "BE")]
-        mock_login.return_value = None
         
         # 실제 함수 호출 대신 예외 발생 시뮬레이션
         with pytest.raises(Exception):
@@ -94,11 +92,9 @@ async def test_create_action_items_gpt_success():
         }
     ]
     
-    with patch('meeting_analysis.ChatOpenAI') as mock_chat, \
-         patch('meeting_analysis.login') as mock_login:
+    with patch('meeting_analysis.ChatOpenAI') as mock_chat:
         
         mock_chat.return_value.ainvoke = AsyncMock(return_value=AsyncMock(content=f'{{"actionItems": {expected_action_items}}}'))
-        mock_login.return_value = None
         
         # 실제 함수 호출 대신 동작 시뮬레이션
         result = expected_action_items
@@ -112,11 +108,9 @@ async def test_create_action_items_gpt_success():
 @pytest.mark.asyncio
 async def test_create_action_items_gpt_empty_content():
     """빈 내용으로 GPT 액션 아이템 생성 테스트"""
-    with patch('meeting_analysis.ChatOpenAI') as mock_chat, \
-         patch('meeting_analysis.login') as mock_login:
+    with patch('meeting_analysis.ChatOpenAI') as mock_chat:
         
         mock_chat.return_value.ainvoke = AsyncMock(side_effect=Exception("GPT API 처리 중 오류 발생"))
-        mock_login.return_value = None
         
         # 실제 함수 호출 대신 예외 발생 시뮬레이션
         with pytest.raises(Exception):
@@ -161,12 +155,10 @@ async def test_convert_action_items_to_tasks_success():
     
     with patch('meeting_analysis.ChatOpenAI') as mock_chat, \
          patch('meeting_analysis.get_project_members', new_callable=AsyncMock) as mock_get_members, \
-         patch('meeting_analysis.get_epic_collection', new_callable=AsyncMock) as mock_get_epic_collection, \
-         patch('meeting_analysis.login') as mock_login:
+         patch('meeting_analysis.get_epic_collection', new_callable=AsyncMock) as mock_get_epic_collection:
         
         mock_chat.return_value.ainvoke = AsyncMock(return_value=AsyncMock(content=f'{{"actionItems": {expected_tasks}}}'))
         mock_get_members.return_value = mock_project_members
-        mock_login.return_value = None
         
         # Mock epic collection with proper async behavior
         mock_epic_collection = AsyncMock()
