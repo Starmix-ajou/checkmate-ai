@@ -1,8 +1,8 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from feature_definition import (create_feature_definition,
-                                update_feature_definition)
+#from feature_definition import (create_feature_definition,
+#                                update_feature_definition)
 from langchain_core.messages import AIMessage
 
 

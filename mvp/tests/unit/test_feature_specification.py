@@ -2,9 +2,9 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from feature_specification import (assign_featureId, calculate_priority,
-                                   create_feature_specification,
-                                   update_feature_specification)
+#from feature_specification import (assign_featureId, calculate_priority,
+#                                   create_feature_specification,
+#                                   update_feature_specification)
 from langchain_core.messages import AIMessage
 
 
