@@ -6,15 +6,13 @@ from typing import List
 import torch
 from dotenv import load_dotenv
 from gpt_utils import extract_json_from_gpt_response
-from huggingface_hub import login
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from mongodb_setting import (get_epic_collection, get_project_collection,
                              get_user_collection)
 from openai import AsyncOpenAI
 from project_member_utils import get_project_members
-from transformers import (AutoModelForTokenClassification, AutoTokenizer,
-                          pipeline)
+from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 logger = logging.getLogger(__name__)
 
