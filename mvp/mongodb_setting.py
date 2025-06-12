@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
 # MongoDB 연결 설정
-MONGODB_URI = os.getenv('MONGODB_URI')
-DB_NAME = os.getenv('DB_NAME')
+MONGODB_URI = os.getenv('MONGODB_URI', "mongodb://localhost:27017")
+DB_NAME = os.getenv('DB_NAME', "test_db")
 
 mongo_client = AsyncIOMotorClient(MONGODB_URI)
 db = mongo_client[DB_NAME]
