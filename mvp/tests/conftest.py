@@ -8,6 +8,11 @@ import pytest
 
 # 환경 변수 로드
 #load_dotenv()
+os.environ["OPENAI_API_KEY"] = "sk-proj-1234567890"
+os.environ["DB_NAME"] = "test_db"
+os.environ["REDIS_HOST"] = "localhost"
+os.environ["REDIS_PORT"] = "6379"
+os.environ["REDIS_PASSWORD"] = "123456000"
 
 #@pytest.fixture(scope="session")
 #def test_env():
