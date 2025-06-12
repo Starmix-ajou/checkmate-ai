@@ -10,9 +10,9 @@ import redis.asyncio as aioredis
 logger = logging.getLogger(__name__)
 
 # Redis 연결 설정
-REDIS_HOST = os.getenv('REDIS_HOST')
-REDIS_PORT = int(os.getenv('REDIS_PORT'))
-REDIS_PWD = os.getenv('REDIS_PASSWORD')
+REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
+REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
+REDIS_PWD = os.getenv('REDIS_PASSWORD', '123456000')
 
 #logger.info(f"Redis 연결 설정: host={REDIS_HOST}, port={REDIS_PORT}, password={'*' * len(REDIS_PWD) if REDIS_PWD else None}")
 
