@@ -111,20 +111,3 @@ async def extract_pdf_text(predefined_definition: str) -> str:
     except Exception as e:
         logger.error(f"기능 정의서 다운로드 및 변환 중 오류 발생: {str(e)}", exc_info=True)
         raise Exception(f"기능 정의서 다운로드 및 변환 중 오류 발생: {str(e)}") from e
-
-async def main():
-    # 테스트할 PDF 파일 경로
-    test_pdf_path = "https://test.com"  # 테스트할 PDF 파일 경로를 지정해주세요
-    try:
-        # PDF 텍스트 추출 테스트
-        extracted_text = await extract_pdf_text(test_pdf_path)
-        # 추출된 텍스트 출력
-        print("\n=== 추출된 텍스트 ===")
-        print(extracted_text)
-        print("=== 텍스트 끝 ===\n")
-    except Exception as e:
-        print(f"테스트 실패: {str(e)}")
-
-if __name__ == "__main__":
-    # 비동기 메인 함수 실행
-    asyncio.run(main())

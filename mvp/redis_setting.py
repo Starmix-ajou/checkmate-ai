@@ -10,9 +10,15 @@ import redis.asyncio as aioredis
 logger = logging.getLogger(__name__)
 
 # Redis 연결 설정
-REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
-REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
-REDIS_PWD = os.getenv('REDIS_PASSWORD', '123456000')
+REDIS_HOST = os.getenv('REDIS_HOST') or ("localhost")
+REDIS_PORT = int(os.getenv('REDIS_PORT')) or (6379)
+REDIS_PWD = os.getenv('REDIS_PASSWORD') or ("123456000")
+if not isinstance(REDIS_HOST, str):
+    raise ValueError(f"REDIS_HOST must be a string: {REDIS_HOST}")
+if not isinstance(REDIS_PORT, int):
+    raise ValueError(f"REDIS_PORT must be an integer: {REDIS_PORT}")
+if not isinstance(REDIS_PWD, str):
+    raise ValueError(f"REDIS_PWD must be a string: {REDIS_PWD}")
 
 #logger.info(f"Redis 연결 설정: host={REDIS_HOST}, port={REDIS_PORT}, password={'*' * len(REDIS_PWD) if REDIS_PWD else None}")
 

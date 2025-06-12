@@ -19,10 +19,10 @@ from transformers import (AutoModelForTokenClassification, AutoTokenizer,
 logger = logging.getLogger(__name__)
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
+#os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
-login(token=HUGGINGFACE_API_KEY)
+#HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
+#login(token=HUGGINGFACE_API_KEY)
 
 
 '''
