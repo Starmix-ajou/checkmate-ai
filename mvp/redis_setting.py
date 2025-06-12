@@ -10,9 +10,15 @@ import redis.asyncio as aioredis
 logger = logging.getLogger(__name__)
 
 # Redis 연결 설정
-REDIS_HOST = os.getenv('REDIS_HOST')
-REDIS_PORT = int(os.getenv('REDIS_PORT'))
-REDIS_PWD = os.getenv('REDIS_PASSWORD')
+REDIS_HOST = os.getenv('REDIS_HOST') or ("localhost")
+REDIS_PORT = int(os.getenv('REDIS_PORT')) or (6379)
+REDIS_PWD = os.getenv('REDIS_PASSWORD') or ("123456000")
+if not isinstance(REDIS_HOST, str):
+    raise ValueError(f"REDIS_HOST must be a string: {REDIS_HOST}")
+if not isinstance(REDIS_PORT, int):
+    raise ValueError(f"REDIS_PORT must be an integer: {REDIS_PORT}")
+if not isinstance(REDIS_PWD, str):
+    raise ValueError(f"REDIS_PWD must be a string: {REDIS_PWD}")
 
 #logger.info(f"Redis 연결 설정: host={REDIS_HOST}, port={REDIS_PORT}, password={'*' * len(REDIS_PWD) if REDIS_PWD else None}")
 
@@ -33,7 +39,8 @@ async def test_redis_connection():
         return True
     except Exception as e:
         print(f"Redis 연결 실패: {str(e)}")
-        raise Exception(f"Redis 연결 실패: {str(e)}", exc_info=True) from e
+        logger.error(f"Redis 연결 실패: {str(e)}")
+        raise e
 
 async def save_to_redis(key: str, data: Any):
     logger.info(f"🔍 Redis 데이터 저장 호출 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -47,7 +54,8 @@ async def save_to_redis(key: str, data: Any):
         await redis_client.set(key, data)
         logger.info(f"✅ Redis에 데이터 저장 성공: {key}")
     except Exception as e:
-        raise Exception(f"❌ Redis 저장 중 오류 발생: {str(e)}", exc_info=True) from e
+        logger.error(f"❌ Redis 저장 중 오류 발생: {str(e)}")
+        raise e
 
 async def load_from_redis(key: str) -> Any:
     logger.info(f"🔍 Redis 데이터 로드 호출 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -61,7 +69,8 @@ async def load_from_redis(key: str) -> Any:
                 return data
         return None
     except Exception as e:
-        raise Exception(f"❌ Redis 로드 중 오류 발생: {str(e)}", exc_info=True) from e
+        logger.error(f"❌ Redis 로드 중 오류 발생: {str(e)}")
+        raise e
 
 if __name__ == "__main__":
     asyncio.run(test_redis_connection())

@@ -1,8 +1,21 @@
+import asyncio
 import json
 import logging
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List
+
+from langchain_openai import ChatOpenAI
 
 logger = logging.getLogger(__name__)
+
+async def safe_chat_completion(llm: ChatOpenAI, messages, retries=3):
+    for i in range(retries):
+        try:
+            response = await llm.ainvoke(messages)
+            return response
+        except Exception as e:
+            print(f"[{i+1}/{retries}] OpenAI API 오류: {e}")
+            await asyncio.sleep(1)
+    raise RuntimeError("ChatCompletion API 요청 실패")
 
 
 def extract_json_from_gpt_response(content: str) -> List[Dict[str, Any]]:
@@ -19,7 +32,7 @@ def extract_json_from_gpt_response(content: str) -> List[Dict[str, Any]]:
         ValueError: 유효한 JSON이 아닌 경우
     """
     if not content:
-        raise ValueError("🚨 GPT 응답이 비어 있습니다.")
+        raise ValueError("GPT 응답이 비어 있습니다.")
 
     logger.info(f"GPT 응답 원본: {content}")
 
@@ -51,10 +64,8 @@ def extract_json_from_gpt_response(content: str) -> List[Dict[str, Any]]:
         parsed = json.loads(content)
         logger.info("✅ JSON 파싱 완료")
     except json.JSONDecodeError as e:
-        error_pos = int(e.pos) if isinstance(e.pos, str) else e.pos
-        error_context = content[max(0, error_pos-10):min(len(content), error_pos+10)]
-        logger.error(f"❌ JSON 파싱 실패: 위치 {error_pos}, 문제 문자 주변: {error_context}")
-        raise ValueError(f"GPT 응답 파싱 중 오류 발생: {str(e)}")
+        logger.error(f"❌ JSON 파싱 실패: {str(e)}")
+        raise ValueError("GPT 응답 파싱 중 오류 발생")
     
     return parsed
 

@@ -10,12 +10,12 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 from dotenv import load_dotenv
 from feature_specification import calculate_priority
-from gpt_utils import extract_json_from_gpt_response
+from gpt_utils import extract_json_from_gpt_response, safe_chat_completion
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from mongodb_setting import (get_epic_collection, get_feature_collection,
                              get_project_collection, get_task_collection,
-                             get_user_collection)
+                             get_user_collection, init_collections)
 from openai import AsyncOpenAI
 from project_member_utils import get_project_members
 
@@ -26,47 +26,12 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-def check_collection_initialized():
-    collections = {
-        "feature_collection": feature_collection,
-        "project_collection": project_collection,
-        "epic_collection": epic_collection,
-        "task_collection": task_collection,
-        "user_collection": user_collection
-    }
-    
-    uninitialized_collections = []
-    for name, collection in collections.items():
-        if collection is None:
-            uninitialized_collections.append(name)
-    
-    if len(uninitialized_collections) > 0:
-        raise ValueError(f"다음의 collection들이 초기화되지 않았습니다: {uninitialized_collections}")
-    
-    logger.info("✅ 모든 collection이 정상적으로 초기화되었습니다.")
-    return True
-
-# db 초기화 함수
-async def init_collections():
-    global feature_collection, project_collection, epic_collection, task_collection, user_collection
-    feature_collection = None
-    project_collection = None
-    epic_collection = None
-    task_collection = None
-    user_collection = None
-    
-    feature_collection = await get_feature_collection()
-    project_collection = await get_project_collection()
-    epic_collection = await get_epic_collection()
-    task_collection = await get_task_collection()
-    user_collection = await get_user_collection()
-    
-    if not check_collection_initialized():
-        raise False
-    return True
-
 async def calculate_eff_mandays(efficiency_factor: float, number_of_developers: int, sprint_days: int, workhours_per_day: int) -> int:
     logger.info(f"🔍 개발자 수: {number_of_developers}명, 1일 개발 업무시간: {workhours_per_day}시간, 스프린트 주기: {sprint_days}일, 효율성 계수: {efficiency_factor}")
+    if efficiency_factor <= 0:
+        raise ValueError("효율성 계수는 0보다 커야 합니다.")
+    if number_of_developers <= 0:
+        raise ValueError("개발자 수는 0보다 커야 합니다.")
     mandays = number_of_developers * sprint_days * workhours_per_day
     logger.info(f"⚙️  Sprint별 작업 배정 시간: {mandays}시간")
     eff_mandays = round(mandays * efficiency_factor)
@@ -116,6 +81,7 @@ async def calculate_percentiles(tasks: List[Dict[str, Any]]) -> List[Dict[str, A
 3. create_task_from_null: project & epic의 description 사용
 '''
 async def create_task_from_feature(epic_id: str, feature_id: str, project_id: str, workhours_per_day: int) -> List[Dict[str, Any]]:
+    feature_collection, project_collection, epic_collection, task_collection, user_collection = await init_collections()
     logger.info(f"🔍 기존의 feature 정보로부터 task 정의 시작: {feature_id}")
     assert feature_id is not None, "feature로부터 정의된 epic에 대해 task를 정의하는 스텝이므로 feature_id가 존재해야 합니다."
     feature = await feature_collection.find_one({"featureId": feature_id})
@@ -170,7 +136,7 @@ async def create_task_from_feature(epic_id: str, feature_id: str, project_id: st
         model_name="gpt-4o-mini",
         temperature=0.4,
     )
-    response = await llm.ainvoke(messages)
+    response = await safe_chat_completion(llm, messages)
 
     try:
         content = response.content
@@ -178,11 +144,11 @@ async def create_task_from_feature(epic_id: str, feature_id: str, project_id: st
             gpt_result = extract_json_from_gpt_response(content)
         except Exception as e:
             logger.error(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True)
-            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True) from e
+            raise e
         
     except Exception as e:
         logger.error(f"GPT API 처리 중 오류 발생: {e}", exc_info=True)
-        raise Exception(f"GPT API 처리 중 오류 발생: {str(e)}", exc_info=True) from e
+        raise e
     
     task_to_store = []
     tasks = gpt_result["tasks"]
@@ -209,6 +175,7 @@ async def create_task_from_feature(epic_id: str, feature_id: str, project_id: st
 
 
 async def create_task_from_epic(epic_id: str, project_id: str, task_db_data: List[Dict[str, Any]], workhours_per_day: int) -> List[Dict[str, Any]]:
+    feature_collection, project_collection, epic_collection, task_collection, user_collection = await init_collections()
     logger.info(f"🔍 기존의 epic과 task 정보로부터 task 정의 시작: {epic_id}")
     assert epic_id is not None, "epic에 _id가 없습니다."    # epic은 id가 없으면 안 됨
     assert len(task_db_data) > 0, "task_db_data가 매개변수로 전달되지 않음."
@@ -232,8 +199,7 @@ async def create_task_from_epic(epic_id: str, project_id: str, task_db_data: Lis
         if task["priority"] is None:
             null_fields.append("priority")
     
-    task_creation_from_epic_prompt = ChatPromptTemplate.from_template(
-    """
+    task_creation_from_epic_prompt = ChatPromptTemplate.from_template("""
     당신은 애자일 마스터입니다. 당신의 주요 언어는 한국어입니다. 당신의 업무는 규칙에 따라 주어진 epic과 epic의 하위 task에 대해 null인 필드의 값을 생성하는 것입니다.
     규칙은 다음과 같습니다.
     1. {epic_description}이 "null"인지 확인하세요. 만약 null이라면 {epic_title}으로부터 {epic_description}을 구성하세요. {epic_title}에 대해 예상되는 사용 시나리오, 입력 데이터, 출력 데이터를 내용으로 포함하세요.
@@ -250,7 +216,7 @@ async def create_task_from_epic(epic_id: str, project_id: str, task_db_data: Lis
     4. 마지막으로 가장 중요한 규칙입니다. {null_fields}에 존재하지 않는 task의 모든 필드들은 {task_db_data}에 존재하는 값을 그대로 반환해야 합니다.
     다시 한 번 강조합니다. {null_fields}에 존재하지 않는 task의 모든 필드들은 2번과 3번의 과정과 관련없으므로 {task_db_data}에 존재하는 값을 그대로 반환해야 합니다.
     
-    결과를 다음과 같은 형식으로 반환해 주세요.
+    반드시 다음 JSON 형식으로만 응답해주세요. 다른 형식의 응답은 허용되지 않습니다:
     {{
         "epic_description": "string",
         "tasks": [
@@ -272,7 +238,7 @@ async def create_task_from_epic(epic_id: str, project_id: str, task_db_data: Lis
         null_fields = null_fields,
         epic_title = epic["title"],
         epic_description = epic["description"] if epic["description"] is not None else "null",
-        task = task_db_data,
+        task_db_data = task_db_data,
         project_members = project_members,
         workhours_per_day = workhours_per_day
     )
@@ -288,10 +254,10 @@ async def create_task_from_epic(epic_id: str, project_id: str, task_db_data: Lis
             gpt_result = extract_json_from_gpt_response(content)
         except Exception as e:
             logger.error(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True)
-            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True) from e
+            raise e
     except Exception as e:
         logger.error(f"GPT API 처리 중 오류 발생: {e}", exc_info=True)
-        raise Exception(f"GPT API 처리 중 오류 발생: {str(e)}", exc_info=True) from e
+        raise e
     
     task_to_store = []
     tasks = gpt_result["tasks"]
@@ -316,6 +282,7 @@ async def create_task_from_epic(epic_id: str, project_id: str, task_db_data: Lis
 
 
 async def create_task_from_null(epic_id: str, project_id: str, workhours_per_day: int) -> List[Dict[str, Any]]:
+    feature_collection, project_collection, epic_collection, task_collection, user_collection = await init_collections()
     logger.info(f"🔍 null로부터 task 정의 시작: {epic_id}")
     task_creation_from_null_prompt = ChatPromptTemplate.from_template(
     """
@@ -374,10 +341,10 @@ async def create_task_from_null(epic_id: str, project_id: str, workhours_per_day
             gpt_result = extract_json_from_gpt_response(content)
         except Exception as e:
             logger.error(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True)
-            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True) from e
+            raise e
     except Exception as e:
         logger.error(f"GPT API 처리 중 오류 발생: {e}", exc_info=True)
-        raise Exception(f"GPT API 처리 중 오류 발생: {str(e)}", exc_info=True) from e
+        raise e
     
     task_to_store = []
     tasks = gpt_result["tasks"]
@@ -422,12 +389,13 @@ Sprint 생성 POST API에 라우팅 되는 함수
 '''
 
 async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]], start_date: datetime) -> Dict[str, Any]:
+    feature_collection, project_collection, epic_collection, task_collection, user_collection = await init_collections()
     logger.info(f"🔍 스프린트 생성 시작: {project_id}")
     assert project_id is not None, "project_id가 존재하지 않습니다."
     
     # DB 콜렉션 인스턴스 생성 및 초기화
     initialize_db_collection = await init_collections()
-    assert initialize_db_collection is True, "collection 호출 및 초기화에 실패하였습니다. 다시 시도하세요."
+    assert initialize_db_collection is not None, "collection 호출 및 초기화에 실패하였습니다. 다시 시도하세요."
     
     ### 1단계: 이번 Sprint에 포함되는 epic들을 projectId로 조회한다. 이때 조회된 epic들이 epic_id를 갖는지 검사한다.
     try:
@@ -509,16 +477,50 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
                     logger.info(f"❌ - ✅ epic {epic['title']}에 featureId가 존재합니다. feature 정보로부터 새로운 task 정보를 생성합니다.")
                     feature_id = epic["featureId"]
                     task_defined_from_feature = await create_task_from_feature(epic_id, feature_id, project_id, workhours_per_day)
+                    try:
+                        for task in task_defined_from_feature:
+                            task["priority"] = calculate_priority(task["difficulty"], task["expected_workhours"])
+                    except Exception as e:
+                        logger.error(f"🚨 feature 정보로부터 새롭게 정의된 task의 우선순위 계산 중 오류 발생: {e}", exc_info=True)
+                        raise e
                     captured_tasks.extend(task_defined_from_feature)
                 else:
                     logger.info(f"❌ - ❌ epic {epic['title']}의 featureId가 없습니다. epic 정보로부터 새로운 task 정보를 생성합니다.")
                     task_defined_from_null = await create_task_from_null(epic_id, project_id, workhours_per_day)
+                    try:
+                        for task in task_defined_from_null:
+                            task["priority"] = calculate_priority(task["difficulty"], task["expected_workhours"])
+                    except Exception as e:
+                        logger.error(f"🚨 null 정보로부터 새롭게 정의된 task의 우선순위 계산 중 오류 발생: {e}", exc_info=True)
+                        raise e
                     captured_tasks.extend(task_defined_from_null)
             else:   # 정의된 하위 task가 있는 epic은 기존 task 정보를 사용하되, null인 값을 채워 넣습니다.
                 logger.info(f"✅ epic {epic['title']}의 task 정보가 이미 존재합니다. 기존 task 정보를 사용합니다.")
-                task_defined_from_epic = await create_task_from_epic(epic_id, project_id, task_db_data, workhours_per_day)
-                captured_tasks.extend(task_defined_from_epic)
-            logger.info(f"🔍 epic {epic['title']}의 하위 task 정의 결과: {captured_tasks}")
+                # pendingTaskIds가 존재할 경우, Id를 하나씩 순회하면서 tasks에서 제외되어 있는 task를 추가하고, priority로 300을 부여하여 제일 앞에 위치
+                if pending_tasks_ids:
+                    logger.info(f"🔍 pendingTaskIds가 존재합니다. 이를 바탕으로 tasks에서 제외되어 있는 task를 추가하고, tasks의 제일 앞에 위치시킵니다.")
+                    for pending_task_id in pending_tasks_ids:
+                        loaded_tasks_ids = [loaded_task["_id"] for loaded_task in task_db_data]
+                        # pendingTask가 epic의 task 정보에 이미 존재하지 않는 경우, 해당 id를 가진 task를 task_collection에서 조회한 후 이번 epic, sprint에 추가
+                        if pending_task_id not in loaded_tasks_ids:
+                            logger.info(f"❌ pendingTaskId: {pending_task_id}가 아직 이번 sprint에 포함되지 않은 task이므로 해당 id를 가진 task를 이번 sprint에 추가합니다.")
+                            assert pending_task is not None, f"pendingTaskId: {pending_task_id}로 task collection에서 조회되는 정보가 없습니다."
+                            pending_task = await task_collection.find_one({"_id": pending_task_id})     # 여기가 조건 분기에서 차이 나는 로직
+                            assert epic_id is not None, f"pendingTaskId: {pending_task_id}에 epicId가 없습니다."
+                            epic_id = pending_task["epic"]
+                            task_defined_from_epic = await create_task_from_epic(epic_id, project_id, pending_task, workhours_per_day)
+                        else:
+                            # pendingTask가 epic의 task 정보에 이미 존재하는 경우, 해당 task를 그대로 create_task_from_epic에 넘겨서 처리한 후 이번 sprint에 추가
+                            logger.info(f"✅ pendingTaskId: {pending_task_id}인 task가 epic {epic['title']}의 task 정보로 이미 존재합니다.")
+                            task_defined_from_epic = await create_task_from_epic(epic_id, project_id, task_db_data, workhours_per_day)
+                        # pendingTask는 이미 포함되어 있었든 아니든 중요도를 높게 변경해서 epic의 맨 앞에 위치시킨다.
+                        try:
+                            for task in task_defined_from_epic:
+                                task["priority"] = 300
+                            captured_tasks.extend(task_defined_from_epic)
+                        except Exception as e:
+                            logger.error(f"🚨 pendingTaskId: {pending_task_id}인 task를 맨 앞에 위치시키는 중 오류 발생: {e}", exc_info=True)
+                            raise e
         except Exception as e:
             logger.error(f"🚨 epic {epic['title']}의 하위 task 정의 과정에서 오류 발생: {e}", exc_info=True)
             raise e
@@ -526,6 +528,7 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
         # epic의 총합 우선순위를 계산해서 prioritySum 필드로 기입하고, task를 우선순위 내림차순 정렬
         epic_priority_sum = 0
         for task in captured_tasks:
+            assert task["priority"] is not None, f"task의 priority 값이 없습니다."
             epic_priority_sum += task["priority"]
         epic["prioritySum"] = epic_priority_sum
         logger.info(f"🔍 Epic {epic['title']}의 우선순위 총합: {epic_priority_sum}")
@@ -545,41 +548,6 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
     except Exception as e:
         logger.error(f"🚨 Epic 우선순위에 따른 정렬 중 오류 발생: {e}", exc_info=True)
         raise e
-
-    ### 6단계: pendingTaskIds가 task_db_data에 모두 존재하는지 검사한다. 누락된 task는 task_id로 정보를 가져와서 task_db_data에 추가한다.
-    # pendingTaskIds가 존재할 경우, Id를 하나씩 순회하면서 tasks에서 제외되어 있는 task를 추가하고, priority로 300을 부여하여 제일 앞에 위치시킨다.
-    if pending_tasks_ids:
-        logger.info(f"🔍 pendingTaskIds가 존재합니다. 이를 바탕으로 tasks에서 제외되어 있는 task를 추가하고, tasks의 제일 앞에 위치시킵니다.")
-        for pending_task_id in pending_tasks_ids:
-            captured_tasks_ids = [task["_id"] for task in captured_tasks]
-            if pending_task_id not in captured_tasks_ids:
-                logger.info(f"🔍 pendingTaskId: {pending_task_id}가 tasks에 존재하지 않습니다. 해당 id를 가진 task를 이번 sprint에 추가합니다.")
-                try:
-                    pending_task = await task_collection.find_one({"_id": pending_task_id})
-                    assert pending_task is not None, f"pendingTaskId: {pending_task_id}로 task collection에서 조회되는 정보가 없습니다."
-                    epic_id = pending_task["epic"]
-                    assert epic_id is not None, f"pendingTaskId: {pending_task_id}에 epicId가 없습니다."
-                    # pending_task의 모든 필드를 점검하여 null인 필드가 존재하는지 확인
-                    for field, value in pending_task.items():
-                        if value is None:
-                            logger.info(f"🔍 pendingTaskId: {pending_task_id}의 {field} 필드가 null입니다.")
-                            target_pending_task = await create_task_from_epic(epic_id, project_id, pending_task, workhours_per_day)
-                            break
-                    else:
-                        logger.info(f"🔍 pendingTaskId: {pending_task_id}의 모든 필드가 존재하므로 그대로 pending_task를 이번 sprint에 추가합니다.")
-                        target_pending_task = pending_task
-                except Exception as e:
-                    logger.error(f"🚨 pendingTaskId: {pending_task_id}로 task collection에서 조회되는 정보가 없습니다. {e}", exc_info=True)
-                    raise e
-                try:
-                    target_pending_task["priority"] = 300
-                    captured_tasks.insert(0, target_pending_task)
-                except Exception as e:
-                    logger.error(f"🚨 pendingTaskId: {pending_task_id}인 task를 맨 앞에 위치시키는 중 오류 발생: {e}", exc_info=True)
-                    raise e
-            else:
-                logger.info(f"🔍 ✅ pendingTaskId: {pending_task_id}인 task가 이미 tasks에 존재합니다.")
-
 
     tasks_by_epic = []
     for epic in epics:
@@ -614,17 +582,18 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
     
     결과를 다음과 같은 형식으로 반환하세요. 이때, 만약 startDate와 endDate가 정의되지 않은 task가 존재한다면, sprint와 동일한 시작일, 종료일을 적용하세요.
     반드시 tasks의 모든 field가 값을 가지는지 확인하세요. 또한 priority 값이 중복되는 task가 존재하지 않도록 하세요.
+    반드시 다음 JSON 형식으로만 응답해주세요. 다른 형식의 응답은 허용되지 않습니다:
     {{
         "sprint_days": int,
         "eff_mandays": int,
         "workhours_per_day": int,
-        "number_of_sprints": int
+        "number_of_sprints": int,
         "sprints": [
         {{
             "title": "string",
             "description": "string",
-            "startDate": str(YYYY-MM-DD),
-            "endDate": str(YYYY-MM-DD),
+            "startDate": "YYYY-MM-DD",
+            "endDate": "YYYY-MM-DD",
             "epics": [
             {{
                 "epicId": "string",
@@ -633,8 +602,8 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
                     "title": "string",
                     "description": "string",
                     "assignee": "string",
-                    "startDate": str(YYYY-MM-DD),
-                    "endDate": str(YYYY-MM-DD),
+                    "startDate": "YYYY-MM-DD",
+                    "endDate": "YYYY-MM-DD",
                     "expected_workhours": int,
                     "priority": int
                 }},
@@ -671,7 +640,7 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
             gpt_result = extract_json_from_gpt_response(content)
         except Exception as e:
             logger.error(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True)
-            raise Exception(f"GPT util 사용 중 오류 발생: {str(e)}", exc_info=True) from e
+            raise e
     except Exception as e:
         logger.error(f"GPT API 처리 중 오류 발생: {e}", exc_info=True)
         raise e
@@ -750,7 +719,7 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
     logger.info(f"📌 생성된 name_to_id 매핑: {name_to_id}")
     
     if not name_to_id:
-        raise Exception("사용자 정보를 찾을 수 없습니다. 프로젝트 멤버 정보를 확인해주세요.")
+        logger.error("❌ 사용자 정보를 찾을 수 없습니다. 프로젝트 멤버 정보를 확인해주세요.")
     
     first_sprint = sprints[0]
     logger.info(f"📌 첫 번째 순서의 sprint만 추출 : {first_sprint}")
@@ -777,7 +746,7 @@ async def create_sprint(project_id: str, pending_tasks_ids: Optional[List[str]],
                 task["priority"] = 250
             if task["assignee"] not in name_to_id:
                 logger.warning(f"⚠️ 현재 매핑된 사용자 목록: {list(name_to_id.keys())}")
-                raise Exception(f"⚠️ {task['title']}의 담당자인 {task['assignee']}가 매핑된 name_to_id에 존재하지 않습니다.")
+                logger.warning(f"⚠️ {task['title']}의 담당자인 {task['assignee']}가 매핑된 name_to_id에 존재하지 않습니다.")
             logger.info(f"✅ {task['title']}의 담당자인 {task['assignee']}가 매핑된 name_to_id에 존재합니다.")
             try:
                 task["assignee"] = name_to_id[task["assignee"]]  # 이름을 ID로 변환

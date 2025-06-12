@@ -12,21 +12,15 @@ logger = logging.getLogger(__name__)
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
 # MongoDB 연결 설정
-MONGODB_URI = os.getenv('MONGODB_URI')
-DB_NAME = os.getenv('DB_NAME')
+MONGODB_URI = os.getenv('MONGODB_URI') or ("mongodb://localhost:27017")
+DB_NAME = os.getenv('DB_NAME') or ("test_db")
+if not isinstance(DB_NAME, str):
+    raise ValueError(f"DB_NAME must be a string: {DB_NAME}")
 
 mongo_client = AsyncIOMotorClient(MONGODB_URI)
 db = mongo_client[DB_NAME]
 
-# MOCK_MONGODB_URI = "mongodb://localhost:27017"
-# MOCK_DB_NAME = "checkmate"
-
-# mock_mongo_client = AsyncIOMotorClient(MOCK_MONGODB_URI)
-# mock_db = mock_mongo_client[MOCK_DB_NAME]
-
 async def test_mongodb_connection():
-    #logger.info(f"MongoDB 연결 설정: uri={MONGODB_URI}, db={DB_NAME}")
-    #logger.info(f"Mock MongoDB 연결 설정: uri={MOCK_MONGODB_URI}, db={MOCK_DB_NAME}")
     try:
         pong = await mongo_client.admin.command('ping')
         logger.info(f"MongoDB 연결 성공: {pong}")
@@ -55,6 +49,44 @@ async def get_user_collection():
     logger.info(f"🔍 get_user_collection 호출 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     return db['users']
 
+def collection_is_initialized():
+    collections = {
+        "feature_collection": feature_collection,
+        "project_collection": project_collection,
+        "epic_collection": epic_collection,
+        "task_collection": task_collection,
+        "user_collection": user_collection
+    }
+    
+    uninitialized_collections = []
+    for name, collection in collections.items():
+        if collection is None:
+            uninitialized_collections.append(name)
+    
+    if len(uninitialized_collections) > 0:
+        raise ValueError(f"다음의 collection들이 초기화되지 않았습니다: {uninitialized_collections}")
+    
+    logger.info("✅ 모든 collection이 정상적으로 초기화되었습니다.")
+    return True
+
+# db 초기화 함수
+async def init_collections():
+    global feature_collection, project_collection, epic_collection, task_collection, user_collection
+    feature_collection = None
+    project_collection = None
+    epic_collection = None
+    task_collection = None
+    user_collection = None
+    
+    feature_collection = await get_feature_collection()
+    project_collection = await get_project_collection()
+    epic_collection = await get_epic_collection()
+    task_collection = await get_task_collection()
+    user_collection = await get_user_collection()
+    
+    if not collection_is_initialized():
+        raise False
+    return feature_collection, project_collection, epic_collection, task_collection, user_collection
 
 if __name__ == "__main__":
     asyncio.run(test_mongodb_connection())

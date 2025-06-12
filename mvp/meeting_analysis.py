@@ -3,25 +3,25 @@ import os
 from collections import defaultdict
 from typing import List
 
-import torch
+#import torch
 from dotenv import load_dotenv
 from gpt_utils import extract_json_from_gpt_response
-from huggingface_hub import login
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from mongodb_setting import (get_epic_collection, get_project_collection,
                              get_user_collection)
 from openai import AsyncOpenAI
 from project_member_utils import get_project_members
-from transformers import AutoModelForTokenClassification, AutoTokenizer
+
+#from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 logger = logging.getLogger(__name__)
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
+#os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
-login(token=HUGGINGFACE_API_KEY)
+#HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
+#login(token=HUGGINGFACE_API_KEY)
 
 
 '''
@@ -32,7 +32,7 @@ B-PER: 시작 토큰, I-PER: 중간 토큰, O: 그 외 토큰
 '''
 
 
-specify_model_name = "monologg/koelectra-base-v3-naver-ner"
+original_model_name = "monologg/koelectra-base-v3-naver-ner"
 '''
 스펙 짧게 정리: 
     - koelectra-base-v3 (한국어 ELECTRA 변형)이 기반 모델
@@ -44,113 +44,97 @@ specify_model_name = "monologg/koelectra-base-v3-naver-ner"
     - 속도: 빠름
 '''
 
-tokenizer = AutoTokenizer.from_pretrained(specify_model_name)
-model_for_ner = AutoModelForTokenClassification.from_pretrained(specify_model_name)
+#tokenizer = AutoTokenizer.from_pretrained(original_model_name)
+#model_for_ner = AutoModelForTokenClassification.from_pretrained(original_model_name)
 
-async def create_action_items_finetuned(content: str):
-    logger.info(f"🔍 회의 액션 아이템 생성 시작")
-    
-    # 모델의 입력 token 단위가 512개이므로, 이를 맞추기 위해 문단 단위로 텍스트 전처리
-    paragraphs = content.split("\n\n")
-    entities = []
-    
-    # 각 문단별로 처리
-    for paragraph in paragraphs:
-        if not paragraph.strip():   # 비어 있는 문단은 생략
-            continue
-        
-        # 문단을 토큰화
-        inputs = tokenizer(
-            paragraph,
-            return_tensors="pt",
-            truncation=True,
-            max_length=512,  # 모델의 입력 token 단위가 512개이므로, 이를 명시적으로 맞춰서 처리
-            return_offsets_mapping=True,
-            return_token_type_ids=False,
-        )
-        offset_mapping = inputs.pop("offset_mapping")[0] # offset mapping을 해야 이후에 토큰에 대응되는 문자열을 복원할 수 있음
-        
-        with torch.no_grad():
-            outputs = model_for_ner(**inputs)
-        
-        logits = outputs.logits
-        predictions = torch.argmax(logits, dim=2)[0].tolist()   # list로 묶어서 차원 축소
-        input_ids = inputs["input_ids"][0]
-        id2label = model_for_ner.config.id2label
-        tokens = tokenizer.convert_ids_to_tokens(input_ids)
-    
-        current_entity = {"type": None, "text": "", "start": None}
-    
-        for i, pred in enumerate(predictions):
-            label = id2label[pred]
-            start, end = offset_mapping[i].tolist()
-            text_span = paragraph[start:end]
-        
-            if "-" in label:
-                entity_type, tag = label.split("-")
-            else:
-                entity_type, tag = label, "0"
-                
-            if tag == "B":
-                # 이전 entity 저장
-                if current_entity["text"]:
-                    entities.append(current_entity.copy())
-                current_entity = {
-                    "type": entity_type,
-                    "text": text_span,
-                    "start": start,
-                }
-            elif tag == "I" and current_entity["type"] == entity_type:
-                current_entity["text"] += text_span
-            else:
-                # Outside 태그 / type 불일치
-                if current_entity["text"]:
-                    entities.append(current_entity.copy())
-                    current_entity = {"type": None, "text": "", "start": None}
-                    
-        if current_entity["text"]:
-            # 마지막 entity 처리
-            entities.append(current_entity.copy())
-    
-    # 디버깅용 출력
-    print("=== Extracted Entities ===")
-    for ent in entities:
-        print(ent)
-        
-    # task를 중심으로 assignee, enddate mapping
-    action_items = []
-    tasks = [e for e in entities if e["type"] in {"EVT", "TRM"}]
-    assignees = [e for e in entities if e["type"] == "PER"]
-    enddates = [e for e in entities if e["type"] == "DAT"]
-    
-    for task in tasks:
-        closest_assignee = min(assignees, key=lambda x: abs(x["start"] - task["start"]), default=None)
-        closest_enddate = min(enddates, key=lambda x: abs(x["start"] - task["start"]), default=None)
-        
-        action_items.append({
-            "task": task["text"],
-            "assignee": closest_assignee["text"] if closest_assignee else "",
-            "enddate": closest_enddate["text"] if closest_enddate else "",
-        })
-        
-    ''' 
-    다음과 같은 형태로 action_items가 반환되면 성공
-    [
-        {
-            "task": "보고서 제출",
-            "assignee": "김승연",
-            "enddate": "2024년 10월 1일"
-        },
-        {
-            "task": "자료 정리",
-            "assignee": "",
-            "enddate": ""
-        },
-    ]
-    '''
-    logger.info(f"최종 처리된 action_items: {action_items}")
-    
-    return action_items
+### ==================== 회의 액션 아이템 생성 - 파인튜닝 모델 사용 ==================== ###
+#async def create_action_items_finetuned(content: str):
+#    logger.info(f"🔍 회의 액션 아이템 생성 시작")
+#    
+#    # 모델의 입력 token 단위가 512개이므로, 이를 맞추기 위해 문단 단위로 텍스트 전처리
+#    paragraphs = content.split("\n\n")
+#    entities = []
+#    
+#    # 각 문단별로 처리
+#    for paragraph in paragraphs:
+#        if not paragraph.strip():   # 비어 있는 문단은 생략
+#            continue
+#        
+#        # 문단을 토큰화
+#        inputs = tokenizer(
+#            paragraph,
+#            return_tensors="pt",
+#            truncation=True,
+#            max_length=512,  # 모델의 입력 token 단위가 512개이므로, 이를 명시적으로 맞춰서 처리
+#            return_offsets_mapping=True,
+#            return_token_type_ids=False,
+#        )
+#        offset_mapping = inputs.pop("offset_mapping")[0] # offset mapping을 해야 이후에 토큰에 대응되는 문자열을 복원할 수 있음
+#        
+#        #with torch.no_grad():
+#        #    outputs = model_for_ner(**inputs)
+#        
+#        #logits = outputs.logits
+#        #predictions = torch.argmax(logits, dim=2)[0].tolist()   # list로 묶어서 차원 축소
+#        input_ids = inputs["input_ids"][0]
+#        id2label = model_for_ner.config.id2label
+#        tokens = tokenizer.convert_ids_to_tokens(input_ids)
+#
+#        current_entity = {"type": None, "text": "", "start": None}
+#    
+#        for i, pred in enumerate(predictions):
+#            label = id2label[pred]
+#            start, end = offset_mapping[i].tolist()
+#            text_span = paragraph[start:end]
+#        
+#            if "-" in label:
+#                entity_type, tag = label.split("-")
+#            else:
+#                entity_type, tag = label, "0"
+#                
+#            if tag == "B":
+#                # 이전 entity 저장
+#                if current_entity["text"]:
+#                    entities.append(current_entity.copy())
+#                current_entity = {
+#                    "type": entity_type,
+#                    "text": text_span,
+#                    "start": start,
+#                }
+#            elif tag == "I" and current_entity["type"] == entity_type:
+#                current_entity["text"] += text_span
+#            else:
+#                # Outside 태그 / type 불일치
+#                if current_entity["text"]:
+#                    entities.append(current_entity.copy())
+#                    current_entity = {"type": None, "text": "", "start": None}
+#                    
+#        if current_entity["text"]:
+#            # 마지막 entity 처리
+#            entities.append(current_entity.copy())
+#            
+#    # 엔티티를 액션 아이템으로 변환
+#    action_items = []
+#    current_action = None
+#    
+#    for entity in entities:
+#        if entity["type"] == "ACTION":
+#            if current_action:
+#                action_items.append(current_action)
+#            current_action = {
+#                "description": entity["text"],
+#                "assignee": None,
+#                "endDate": None
+#            }
+#        elif entity["type"] == "PERSON" and current_action:
+#            current_action["assignee"] = entity["text"]
+#        elif entity["type"] == "DATE" and current_action:
+#            current_action["endDate"] = entity["text"]
+#    
+#    if current_action:
+#        action_items.append(current_action)
+#    
+#    return action_items
 
 ### ============================== API 정의 ============================== ###
 ### ================ Summary & Action Items Extraction ================== ###
@@ -431,37 +415,48 @@ async def analyze_meeting_document(title: str, content: str, project_id: str):
 
 ### ============================== 테스트 코드 ============================== ###
 async def test_meeintg_analysis():
-    #with open('meeting_sample.md', 'r', encoding='utf-8') as f:
-    #    content = f.read()
+    with open('meeting_sample.md', 'r', encoding='utf-8') as f:
+        content = f.read()
     
     # 테스트용 project_id 설정
     project_id = "b5728b16-6610-4762-b178-bb71f56a6616"
     
-    # 액션 아이템 생성 테스트
-    print("=== 액션 아이템 생성 테스트 ===")
-    #action_items = await create_action_items_gpt(content)
-    #print(f"생성된 액션 아이템: {action_items}")
+    title = "꼼꼼한 회의록"
+    summary = await create_summary(title, content, project_id)
+    print(f"생성된 회의 요약: {summary}")
     
     # 회의 요약 생성 테스트
-    load_dotenv()
-    print("\n=== 회의 요약 생성 테스트 - 꼼꼼하게 작성된 버전 ===")
-    title = "꼼꼼한 회의록"
-    print("\n 원본: \n")
-    with open('meeting_sample_strict.md', 'r', encoding='utf-8') as f:
-        content = f.read()
-    print(content)
-    summary = await create_summary(title, content, project_id)
-    print(f"생성된 회의 요약: {summary}")
+    # load_dotenv()
+    # print("\n=== 회의 요약 생성 테스트 - 꼼꼼한 회의록 버전 ===")
+    # title = "꼼꼼한 회의록"
+    # print("\n 원본: \n")
+    # with open('meeting_sample_strict.md', 'r', encoding='utf-8') as f:
+    #     content = f.read()
+    # print(content)
+    # summary = await create_summary(title, content, project_id)
+    # print(f"생성된 회의 요약: {summary}")
     
-    print("\n=== 회의 요약 생성 테스트 - 느슨한 회의록 ===")
-    title = "느슨한 회의록"
-    print("\n 원본: \n")
-    with open('meeting_sample_rough.md', 'r', encoding='utf-8') as f:
-        content = f.read()
-    print(content)
-    summary = await create_summary(title, content, project_id)
-    print(f"생성된 회의 요약: {summary}")
+    # # 액션 아이템 생성 테스트
+    # print("=== 액션 아이템 생성 테스트 - 꼼꼼한 회의록 버전 ===")
+    # action_items = await create_action_items_gpt(content)
+    # print(f"생성된 액션 아이템: {action_items}")
     
+    
+    # print("\n=== 회의 요약 생성 테스트 - 느슨한 회의록 ===")
+    # title = "느슨한 회의록"
+    # print("\n 원본: \n")
+    # with open('meeting_sample_rough.md', 'r', encoding='utf-8') as f:
+    #     content = f.read()
+    # print(content)
+    # summary = await create_summary(title, content, project_id)
+    # print(f"생성된 회의 요약: {summary}")
+    
+    # # 액션 아이템 생성 테스트
+    # print("=== 액션 아이템 생성 테스트 - 느슨한 회의록 버전 ===")
+    # action_items = await create_action_items_gpt(content)
+    # print(f"생성된 액션 아이템: {action_items}")
+
+
 if __name__ == "__main__":
     #print(model_for_ner.config.id2label)
     import asyncio
