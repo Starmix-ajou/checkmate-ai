@@ -9,10 +9,10 @@ import pytest
 # 환경 변수 로드
 #load_dotenv()
 os.environ["OPENAI_API_KEY"] = "sk-proj-1234567890"
-os.environ["DB_NAME"] = "test_db"
-os.environ["REDIS_HOST"] = "localhost"
-os.environ["REDIS_PORT"] = "6379"
-os.environ["REDIS_PASSWORD"] = "123456000"
+#os.environ["DB_NAME"] = "test_db"
+#os.environ["REDIS_HOST"] = "localhost"
+#os.environ["REDIS_PORT"] = "6379"
+#os.environ["REDIS_PASSWORD"] = "123456000"
 
 #@pytest.fixture(scope="session")
 #def test_env():
@@ -24,18 +24,35 @@ os.environ["REDIS_PASSWORD"] = "123456000"
 #    }
 
 @pytest.fixture(scope="function")
-def mock_gpt_response():
-    """GPT 응답을 모킹하기 위한 fixture"""
-    return {
-        "choices": [
-            {
-                "message": {
-                    "content": "테스트 응답입니다."
+def mock_openai():
+    """OpenAI API 모킹을 위한 fixture"""
+    with patch("openai.ChatCompletion.create") as mock_create, \
+         patch("openai.ChatCompletion.acreate") as mock_acreate:
+        
+        # 동기 호출 모킹
+        mock_create.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": "This is a mock response"
+                    }
                 }
-            }
-        ]
-    } 
-    
+            ]
+        }
+        
+        # 비동기 호출 모킹
+        mock_acreate.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": "This is a mock response"
+                    }
+                }
+            ]
+        }
+        
+        yield mock_create, mock_acreate
+
 #@pytest.fixture(autouse=True)
 #def mock_mongodb_client():
 #    """MongoDB 모킹을 위한 fixture"""

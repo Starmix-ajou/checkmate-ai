@@ -45,12 +45,10 @@ async def test_create_summary_success():
     expected_summary = "# 테스트 회의\n\n## 프로젝트 진행 상황\n- 현재 80% 완료\n- 남은 작업: UI 개선\n\n## 다음 단계 계획\n- 다음 주까지 UI 개선 완료\n- 테스트 진행"
     
     with patch('meeting_analysis.ChatOpenAI') as mock_chat, \
-         patch('meeting_analysis.get_project_members', new_callable=AsyncMock) as mock_get_members, \
-         patch('meeting_analysis.login') as mock_login:
+         patch('meeting_analysis.get_project_members', new_callable=AsyncMock) as mock_get_members:
         
         mock_chat.return_value.ainvoke = AsyncMock(return_value=AsyncMock(content=f'{{"summary": "{expected_summary}"}}'))
         mock_get_members.return_value = mock_project_members
-        mock_login.return_value = None
         
         # 실제 함수 호출 대신 동작 시뮬레이션
         result = expected_summary
@@ -217,11 +215,10 @@ async def test_analyze_meeting_document_success():
     expected_tasks = [{"title": "테스트", "description": "테스트", "assigneeId": "user1", "endDate": "2024-10-01", "epicId": "epic1"}]
     
     with patch('meeting_analysis.ChatOpenAI') as mock_chat, \
-         patch('meeting_analysis.get_project_members', new_callable=AsyncMock) as mock_get_members, \
-         patch('meeting_analysis.login') as mock_login:
+         patch('meeting_analysis.get_project_members', new_callable=AsyncMock) as mock_get_members:
         
+        mock_chat.return_value.ainvoke = AsyncMock(return_value=AsyncMock(content=f'{{"summary": "{expected_summary}", "actionItems": {expected_action_items}, "tasks": {expected_tasks}}}'))
         mock_get_members.return_value = mock_project_members
-        mock_login.return_value = None
         
         # 실제 함수 호출 대신 동작 시뮬레이션
         result = {
@@ -236,11 +233,9 @@ async def test_analyze_meeting_document_success():
 @pytest.mark.asyncio
 async def test_analyze_meeting_document_empty_input():
     """빈 입력으로 회의 문서 분석 테스트"""
-    with patch('meeting_analysis.get_project_members', new_callable=AsyncMock) as mock_get_members, \
-         patch('meeting_analysis.login') as mock_login:
+    with patch('meeting_analysis.get_project_members', new_callable=AsyncMock) as mock_get_members:
         
         mock_get_members.return_value = [("홍길동", "BE")]
-        mock_login.return_value = None
         
         # 실제 함수 호출 대신 예외 발생 시뮬레이션
         with pytest.raises(Exception):
