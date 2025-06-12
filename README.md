@@ -171,3 +171,5 @@ Task는 Epic 단위로 구조화할 수 있으며, Gantt Chart, Kanban Board, Ca
 
 ### Output Embedding
 - use BAAI/bge-m3 in common
+
+
