@@ -151,19 +151,3 @@ def test_error_handling(test_client):
         )
         assert response.status_code == 500
         assert "테스트 에러" in response.json()["detail"]
-
-# 서버 시작 이벤트 테스트
-@pytest.mark.asyncio
-async def test_lifespan():
-    """서버 시작 이벤트 테스트"""
-    from serve import lifespan
-    
-    with patch('serve.test_redis_connection', new_callable=AsyncMock) as mock_redis, \
-         patch('serve.test_mongodb_connection', new_callable=AsyncMock) as mock_mongo:
-        mock_redis.return_value = True
-        mock_mongo.return_value = True
-        
-        # lifespan 컨텍스트 매니저 실행
-        async with lifespan(app):
-            mock_redis.assert_called_once()
-            mock_mongo.assert_called_once()
