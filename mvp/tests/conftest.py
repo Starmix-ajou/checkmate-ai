@@ -1,5 +1,7 @@
 import os
+from unittest.mock import patch
 
+import mongomock
 import pytest
 from dotenv import load_dotenv
 
@@ -27,3 +29,11 @@ def mock_gpt_response():
             }
         ]
     } 
+    
+@pytest.fixture(autouse=True)
+def mock_mongodb_client():
+    """MongoDB 모킹을 위한 fixture"""
+    mock_client = mongomock.MongoClient()
+    with patch("mongodb_setting.mongo_client", mock_client):
+        with patch("mongodb_setting.db", mock_client["test_db"]):
+            yield
