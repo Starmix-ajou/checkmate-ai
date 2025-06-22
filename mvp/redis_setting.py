@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 REDIS_HOST = os.getenv('REDIS_HOST') or ("localhost")
 REDIS_PORT = int(os.getenv('REDIS_PORT')) or (6379)
 REDIS_PWD = os.getenv('REDIS_PASSWORD') or ("123456000")
-if not isinstance(REDIS_HOST, str):
+if not isinstance(REDIS_HOST, str): 
     raise ValueError(f"REDIS_HOST must be a string: {REDIS_HOST}")
 if not isinstance(REDIS_PORT, int):
     raise ValueError(f"REDIS_PORT must be an integer: {REDIS_PORT}")

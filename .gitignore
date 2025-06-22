@@ -3,7 +3,6 @@ mvp/redis-data.json
 mvp/mock_*.json
 mvp/requirements.in
 mvp/asset/
-mvp/tests/integration/*
 
 # 가상 환경 dismiss
 venv/
@@ -14,6 +13,7 @@ venv/
 # 캐시 파일 dismiss
 */__pycache__/
 *.pyc
+htmlcov/
 
 # 프로젝트와 관련된 기타 docs 및 tests 파일 dismiss
 db_structure.txt
