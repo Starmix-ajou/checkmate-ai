@@ -1,28 +1,21 @@
 import os
+from typing import Any, Dict, List, Optional
 from unittest.mock import patch
 
-import mongomock
 import pytest
+from dotenv import load_dotenv
+from pydantic import BaseModel
 
-#from dotenv import load_dotenv
+load_dotenv(dotenv_path=".env")
 
-# 환경 변수 로드
-#load_dotenv()
-os.environ["OPENAI_API_KEY"] = "sk-proj-1234567890"
-#os.environ["DB_NAME"] = "test_db"
-#os.environ["REDIS_HOST"] = "localhost"
-#os.environ["REDIS_PORT"] = "6379"
-#os.environ["REDIS_PASSWORD"] = "123456000"
+# ✅ session scope 환경 변수 설정 
+@pytest.fixture(scope="session", autouse=True)
+def configure_test_env():
+    required_vars = ["OPENAI_API_KEY", "MONGODB_URI", "REDIS_HOST", "REDIS_PORT", "REDIS_PASSWORD", "DB_NAME"]
+    for var in required_vars:
+        assert os.getenv(var), f"{var} is not set"
 
-#@pytest.fixture(scope="session")
-#def test_env():
-#    """테스트 환경 설정을 위한 fixture"""
-#    return {
-#        "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
-#        "MONGODB_URI": os.getenv("MONGODB_URI"),
-#        "REDIS_URL": os.getenv("REDIS_URL")
-#    }
-
+# ✅ function별 입력 정의
 @pytest.fixture(scope="function")
 def mock_openai():
     """OpenAI API 모킹을 위한 fixture"""
@@ -53,10 +46,4 @@ def mock_openai():
         
         yield mock_create, mock_acreate
 
-#@pytest.fixture(autouse=True)
-#def mock_mongodb_client():
-#    """MongoDB 모킹을 위한 fixture"""
-#    mock_client = mongomock.MongoClient()
-#    with patch("mongodb_setting.mongo_client", mock_client):
-#        with patch("mongodb_setting.db", mock_client["test_db"]):
-#            yield
+
