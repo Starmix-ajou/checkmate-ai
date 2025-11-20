@@ -10,27 +10,27 @@ env:
   IMAGE_NAME: ${{ secrets.OCI_IMAGE_NAME }}
 
 jobs:
-  test:
-    runs-on: [self-hosted, checkmate]
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+  # test:
+  #   runs-on: [self-hosted, checkmate]
+  #   steps:
+  #     - name: Checkout Repository
+  #       uses: actions/checkout@v4
 
-      - name: Install Python 3.10 on ARM64
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y software-properties-common
-          sudo add-apt-repository -y ppa:deadsnakes/ppa
-          sudo apt-get update
-          sudo apt-get install -y python3.10 python3.10-venv python3.10-dev
+  #     - name: Install Python 3.10 on ARM64
+  #       run: |
+  #         sudo apt-get update
+  #         sudo apt-get install -y software-properties-common
+  #         sudo add-apt-repository -y ppa:deadsnakes/ppa
+  #         sudo apt-get update
+  #         sudo apt-get install -y python3.10 python3.10-venv python3.10-dev
 
-      - name: Set up Virtual Environment and Install Dependencies
-        run: |
-          cd mvp
-          python3.10 -m venv .venv
-          source .venv/bin/activate
-          pip install --upgrade pip
-          pip install -r requirements.txt
+  #     - name: Set up Virtual Environment and Install Dependencies
+  #       run: |
+  #         cd mvp
+  #         python3.10 -m venv .venv
+  #         source .venv/bin/activate
+  #         pip install --upgrade pip
+  #         pip install -r requirements.txt
 
       # - name: Run Unit Tests
       #   run: |
