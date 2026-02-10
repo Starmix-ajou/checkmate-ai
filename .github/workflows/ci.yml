@@ -1,73 +1,75 @@
-name: Test, Build and Push to OCI
+name: Test, Build and Deploy to OCI (Daemonless Buildah)
 
 on:
   push:
     branches:
-      - "**"
-  pull_request:
+      - 'main'
 
 env:
+  OCI_REGISTRY: "yny.ocir.io"
   IMAGE_NAME: ${{ secrets.OCI_IMAGE_NAME }}
 
 jobs:
-  # test:
-  #   runs-on: [self-hosted, checkmate]
-  #   steps:
-  #     - name: Checkout Repository
-  #       uses: actions/checkout@v4
-
-  #     - name: Install Python 3.10 on ARM64
-  #       run: |
-  #         sudo apt-get update
-  #         sudo apt-get install -y software-properties-common
-  #         sudo add-apt-repository -y ppa:deadsnakes/ppa
-  #         sudo apt-get update
-  #         sudo apt-get install -y python3.10 python3.10-venv python3.10-dev
-
-  #     - name: Set up Virtual Environment and Install Dependencies
-  #       run: |
-  #         cd mvp
-  #         python3.10 -m venv .venv
-  #         source .venv/bin/activate
-  #         pip install --upgrade pip
-  #         pip install -r requirements.txt
-
-      # - name: Run Unit Tests
-      #   run: |
-      #     cd mvp
-      #     source .venv/bin/activate
-      #     python -m pytest tests/unit -v --junitxml=pytest-report.xml
-
-      # - name: Upload Test Report
-      #   if: always()
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: unit-test-report
-      #     path: mvp/pytest-report.xml
-
   build-and-deploy:
-    # needs: test
-    if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, checkmate]
     steps:
-      - name: Checkout Repository
+      - name: Checkout Source Repository
         uses: actions/checkout@v4
 
-      - name: Log in to OCI Container Registry
+      # 1. Buildah 설치 및 마운트 에러 방지를 위한 VFS 드라이버 설정
+      - name: Install and Configure Buildah
         run: |
-          echo "${{ secrets.OCI_REGISTRY_PASSWORD }}" | docker login yny.ocir.io -u "${{ secrets.OCI_REGISTRY_USERNAME }}" --password-stdin
+          sudo apt-get update && sudo apt-get install -y buildah uidmap
+          sudo mkdir -p /etc/containers
+          
+          # [수정] runroot와 graphroot를 명시적으로 설정합니다.
+          cat <<EOF | sudo tee /etc/containers/storage.conf
+          [storage]
+          driver = "vfs"
+          # 이미지가 실제로 저장되는 경로
+          graphroot = "/var/lib/containers/storage"
+          # 실행 중인 컨테이너의 상태가 저장되는 경로 (에러 해결 포인트)
+          runroot = "/run/containers/storage"
 
-      - name: Build and Push Docker Image
+          [storage.options]
+          additionalimagestores = []
+
+          [storage.options.vfs]
+          ignore_chown_errors = "true"
+          EOF
+          
+          # 레지스트리 설정 유지
+          echo 'unqualified-search-registries = ["docker.io", "quay.io"]' | sudo tee /etc/containers/registries.conf
+
+      # 2. OCI 레지스트리 로그인 (Buildah 사용)
+      - name: Login to OCI Registry
         run: |
-          docker build \
+          # OCI Username 형식: <tenancy-namespace>/<username>
+          # OCI Password: 생성한 Auth Token
+          echo "${{ secrets.OCI_REGISTRY_PASSWORD }}" | \
+          sudo buildah login --username "${{ secrets.OCI_REGISTRY_USERNAME }}" --password-stdin ${{ env.OCI_REGISTRY }}
+
+      # 3. 이미지 빌드 (Dockerfile 기반, 도커 데몬 불필요)
+      - name: Build Image with Buildah
+        run: |
+          # isolation=chroot: 네임스페이스 격리 에러 방지
+          # platform=linux/arm64: OCI ARM 노드 최적화
+          sudo buildah bud \
+            --storage-driver vfs \
+            --isolation chroot \
+            --format docker \
             --platform linux/arm64 \
-            -t $IMAGE_NAME:latest \
-            -t $IMAGE_NAME:${{ github.sha }} \
-            .
+            -f Dockerfile \
+            -t ${{ env.IMAGE_NAME }}:latest \
+            -t ${{ env.IMAGE_NAME }}:${{ github.sha }} .
 
-          docker push $IMAGE_NAME:latest
-          docker push $IMAGE_NAME:${{ github.sha }}
+      # 4. OCI 레지스트리로 이미지 푸시
+      - name: Push Image to OCIR
+        run: |
+          sudo buildah push ${{ env.IMAGE_NAME }}:latest
+          sudo buildah push ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
+      # 5. 매니페스트 리포지토리 체크아웃 (ArgoCD 연동용)
       - name: Checkout Manifest Repository
         uses: actions/checkout@v4
         with:
@@ -75,23 +77,55 @@ jobs:
           token: ${{ secrets.PAT_TOKEN }}
           path: manifests
 
-      - name: Update Image Tag in Deployment YAML
+      # 6. 이미지 태그 업데이트 및 웹훅 시크릿 주입 (Python 스크립트)
+      - name: Update Manifests
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          # 업데이트할 파일 경로 (FastAPI는 ai, Spring은 backend 등 경로에 맞춰 수정)
+          # 여기서는 예시로 ai 경로를 사용합니다.
+          DEPLOY_PATH: "manifests/apps/ai/deployment.yaml" 
+          APP_PATH: "manifests/apps/backend/application.yaml"
         run: |
-          sed -i "s|image: $IMAGE_NAME:.*|image: $IMAGE_NAME:${{ github.sha }}|" manifests/apps/ai/deployment.yaml
+          python3 - <<'PY'
+          import os, re
 
-      - name: Install envsubst
-        run: sudo apt-get update && sudo apt-get install -y gettext
+          img_name = os.environ.get('IMAGE_NAME')
+          sha = os.environ.get('GITHUB_SHA')
+          webhook = os.environ.get('WEBHOOK_SECRET')
+          deploy_path = os.environ.get('DEPLOY_PATH')
+          app_path = os.environ.get('APP_PATH')
 
-      - name: Generate Argo CD Application with Webhook Secret
-        run: |
-          export WEBHOOK_SECRET="${{ secrets.WEBHOOK_SECRET }}"
-          envsubst < manifests/apps/backend/application.yaml > manifests/apps/backend/application.yaml.tmp
-          mv manifests/apps/backend/application.yaml.tmp manifests/apps/backend/application.yaml
+          # 1. Deployment YAML 이미지 태그 수정
+          if os.path.exists(deploy_path):
+              with open(deploy_path, 'r', encoding='utf-8') as f:
+                  content = f.read()
+              new_content = re.sub(rf"image:\s*{re.escape(img_name)}:.*", f"image: {img_name}:{sha}", content)
+              with open(deploy_path, 'w', encoding='utf-8') as f:
+                  f.write(new_content)
+              print(f"Updated image tag in {deploy_path}")
 
-      - name: Commit and Push Changes to Manifest Repo
+          # 2. Application YAML 웹훅 시크릿 주입
+          if os.path.exists(app_path):
+              with open(app_path, 'r', encoding='utf-8') as f:
+                  content = f.read()
+              new_content = re.sub(r'(\$\{?WEBHOOK_SECRET\}?)', webhook, content)
+              with open(app_path, 'w', encoding='utf-8') as f:
+                  f.write(new_content)
+              print(f"Injected webhook secret in {app_path}")
+          PY
+
+      # 7. 변경사항 매니페스트 리포지토리에 푸시
+      - name: Commit and Push Changes
         run: |
           cd manifests
           git config user.name "yeonnnnjs"
           git config user.email "sungyeon52@gmail.com"
-          git commit --allow-empty -am "Update image tag from checkmate-ai"
-          git push origin main
+          git add -A
+          # 변경사항이 있을 때만 커밋 및 푸시
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update image tag to ${{ github.sha }} [skip ci]"
+            git push origin main
+          fi
