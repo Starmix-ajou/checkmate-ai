@@ -2,9 +2,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-#from project_member_utils import (get_project_members,
-#                                  map_memberName_to_memberId)
-
 
 @pytest.mark.asyncio
 async def test_get_project_members_success():
